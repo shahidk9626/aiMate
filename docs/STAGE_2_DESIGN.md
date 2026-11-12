@@ -105,10 +105,13 @@ There is no general-purpose "bypass RLS" connection anywhere in the app.
 |---|---|---|---|
 | View business profile, team list | ✓ | ✓ | ✓ |
 | Edit business profile / settings | ✓ | ✓ | — |
-| Invite / remove / change role of **agents** | ✓ | ✓ | — |
-| Invite / remove / change role of **admins and owners** | ✓ | — | — |
+| Invite / remove **agents** | ✓ | ✓ | — |
+| Change anyone's role | ✓ | — | — |
+| Invite / remove **admins and owners** | ✓ | — | — |
 | Remove or demote the last owner | — | — | — |
 | Leave a business (if not the last owner) | ✓ | ✓ | ✓ |
+
+> **Clarified in step 2.4** (pending product-owner confirmation). The original row "change role of agents" for admins could only mean promoting an agent to admin. Creating admins is owner-only elsewhere in this table, so role changes are owner-only. If admins should be able to promote agents, it is a one-line change in `remove_member`/`change_member_role`.
 
 ---
 

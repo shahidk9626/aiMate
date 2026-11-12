@@ -59,6 +59,10 @@ Decisions D1–D10 from the Day 1 review were approved on 2026-11-12 (see "Resol
 - There is no "sign out all devices" or "active sessions" page yet; changing the password signs out all other sessions.
 - Integration tests that simulate several browsers create one app instance per browser, because each TestClient runs its own event loop and an async connection pool must not cross loops. Production runs one loop per process, so this is test-only.
 
+- Role-matrix clarification awaiting product-owner confirmation: admins cannot change roles (not even promote an agent to admin); see `STAGE_2_DESIGN.md` §5.4.
+- Every refused `X-Tenant-ID` writes a `security.tenant_access_denied` audit row. A misbehaving client could produce many rows; add a per-user rate limit on this path if it ever shows up in monitoring.
+- No dedicated "transfer ownership" action: promote someone to owner, then step down (both via `PATCH /tenant/members/{user_id}`).
+
 ## Bugs
 
 None.

@@ -44,6 +44,7 @@ def _timezone(value: str) -> str:
 
 Email = Annotated[str, Field(max_length=EMAIL_MAX_LENGTH + 20), AfterValidator(_email)]
 Name = Annotated[str, Field(max_length=200), AfterValidator(_name)]
+Timezone = Annotated[str, AfterValidator(_timezone)]
 # Upper bound only; the password policy (10-128) is checked by the service and
 # reported as PASSWORD_POLICY with field details.
 Password = Annotated[str, Field(min_length=1, max_length=1000)]
@@ -58,7 +59,7 @@ class SignupRequest(_Request):
     password: Password
     full_name: Name
     business_name: Name
-    timezone: Annotated[str, AfterValidator(_timezone)] = "UTC"
+    timezone: Timezone = "UTC"
 
 
 class LoginRequest(_Request):

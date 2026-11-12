@@ -202,6 +202,18 @@ Approved by the product owner as recommended in `docs/STAGE_2_DESIGN.md` §2.
 - **Client IPs** are stored and rate-limited only when they parse as IP addresses.
 - **Interactive API docs cannot send writes** (CSRF header and Origin). Use curl or the web app; reading endpoints still work in the docs page.
 
+### ADR-026 Tenant context and team management — Accepted (2026-11-12)
+- **`CurrentTenant` dependency** (`app/modules/tenancy/dependencies.py`) is the only way user requests obtain a tenant. It:
+  - parses `X-Tenant-ID`;
+  - loads the caller's **active** membership (visible via the `user_id = app.user_id` memberships policy);
+  - answers 404 `TENANT_NOT_FOUND` for "not yours", "disabled" and "doesn't exist" alike, logging and auditing the attempt in a separate transaction;
+  - blocks suspended or cancelled businesses (403);
+  - then sets `app.tenant_id`.
+- **`TenantContext`** and `ROLE_RANK` live in `tenancy/context.py`, which has no HTTP or identity imports. Services depend on it without import cycles (identity → tenancy at signup, tenancy → identity for `CurrentAuth`).
+- **Role changes are owner-only**; admins may remove agents; anyone may leave (clarification of the §5.4 matrix, see `STAGE_2_DESIGN.md`).
+- **Last-owner rule under concurrency:** before an owner is demoted or removed, all owner memberships of the business are locked (`SELECT … FOR UPDATE`) and then counted. A test shows that without the lock two owners demoting each other at the same time both succeed and leave zero owners; with it the second gets `409 LAST_OWNER`.
+- **Removing a member deletes the membership row** (the audit log keeps the history). The removed user's session stays valid for their other businesses, but every request to this business is refused from the next request on.
+
 ### Deferred
 - Vector store for knowledge retrieval (pgvector in the same Postgres is the default candidate) — Stage 6.
 - Billing provider (Stripe for US/UK, Razorpay for India are the candidates) — Stage 9.

@@ -76,14 +76,35 @@ Session cookie: `lf_session` (local/test) or `__Host-lf_session` (staging/produc
 ```
 Passwords: 10–128 characters, not equal to the email. Emails are matched case-insensitively.
 
-### Planned (steps 2.4–2.5; see `STAGE_2_DESIGN.md` §8)
+### Implemented (step 2.4): business and team
+
+Every `/tenant…` route needs a session **and** `X-Tenant-ID: <business uuid>`. The header is checked against the caller's active membership before the handler runs.
+
+| Situation | Response |
+|---|---|
+| Header missing | `400 TENANT_REQUIRED` |
+| Header not a UUID | `400 INVALID_TENANT_ID` |
+| Not a member, membership disabled, or business does not exist | `404 TENANT_NOT_FOUND` (identical in all three cases; logged and audited as `security.tenant_access_denied`) |
+| Business suspended or cancelled | `403 TENANT_INACTIVE` |
+| Role too low | `403 PERMISSION_DENIED` |
+
+| Method + path | Body | Success | Errors | Who |
+|---|---|---|---|---|
+| `GET /tenant` | — | `200 data: Tenant` | — | any member |
+| `PATCH /tenant` | any of `{name, timezone, locale}` (at least one; no nulls; unknown fields rejected) | `200 data: Tenant` | `422` | admin, owner |
+| `GET /tenant/members` | — | `200 data: [Member]`, owners first, then admins, then agents, each by name | — | any member |
+| `PATCH /tenant/members/{user_id}` | `{role: owner\|admin\|agent}` | `200 data: Member` | `404 MEMBER_NOT_FOUND`, `409 LAST_OWNER`, `422` | owner |
+| `DELETE /tenant/members/{user_id}` | — | `204` | `404 MEMBER_NOT_FOUND`, `409 LAST_OWNER` | owner: anyone; admin: agents; anyone: themselves (leave) |
+
+`Tenant`: `{id, name, slug, timezone, locale ("en", "en-IN", "en-GB"…), status, created_at}`.
+`Member`: `{user_id, full_name, email, role, status, joined_at}`.
+
+### Planned (step 2.5; see `STAGE_2_DESIGN.md` §8)
 
 | Method + path | Purpose | Access |
 |---|---|---|
 | `POST /auth/password/forgot` · `POST /auth/password/reset` | Password reset by email | Public, rate limited · Reset token |
 | `POST /auth/email/verify` · `POST /auth/email/verify/resend` | Email verification | Token · Session |
-| `GET /tenant` · `PATCH /tenant` | Business profile and settings | Member · Admin+ |
-| `GET /tenant/members` · `PATCH/DELETE /tenant/members/{user_id}` | Team | Member · per role matrix |
 | `GET/POST /tenant/invitations` · `DELETE /tenant/invitations/{id}` | Invitations | Admin+ (verified email) |
 | `GET /invitations/{token}` · `POST /invitations/accept` | Accept an invitation | Token |
 

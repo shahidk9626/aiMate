@@ -2,7 +2,7 @@
 
 ## Current state
 
-**Milestone:** Stage 2 — Authentication and multi-tenancy — steps 2.1–2.3 of 7 complete
+**Milestone:** Stage 2 — Authentication and multi-tenancy — steps 2.1–2.4 of 7 complete
 **Branch:** `stage-2/auth-tenancy` (based on `stage-1/foundation`; neither merged into `main` yet).
 **Design:** `docs/STAGE_2_DESIGN.md`, approved 2026-11-12 (ADR-023).
 **Stage 1:** COMPLETE (2026-11-12).
@@ -308,16 +308,55 @@ What the new tests prove (over HTTP, against PostgreSQL with RLS and Redis):
 - **Isolation:** two users each see only their own account and business.
 - **Transactions:** a failed commit never reports success.
 
+### Stage 2, step 2.4 — Tenant context, business and team endpoints (2026-11-12)
+
+Files created: `app/modules/tenancy/context.py`, `dependencies.py`, `schemas.py`, `router.py`; `tests/integration/test_tenancy_api.py` (42 tests).
+Files changed: `app/modules/tenancy/service.py` (profile and team logic), `app/modules/identity/schemas.py` (public `Timezone` type), `app/api/v1/router.py`.
+
+Interpretation recorded for confirmation: role changes are owner-only (`STAGE_2_DESIGN.md` §5.4).
+Import cycle avoided by putting `TenantContext` in its own module.
+
+Results:
+| Check | Result |
+|---|---|
+| `pytest` | **231 passed** (42 new) |
+| ruff, strict mypy | Clean (73 files) |
+| Concurrency test sensitivity | With the owner-row lock removed, the test **fails** (both owners demoted, zero owners left); with it, passes |
+
+What the new tests prove:
+- **The business header:**
+  - It is required and must be a UUID.
+  - Without a session the answer is 401.
+  - Another business, a non-existent one and a disabled membership all get the same 404, and refusals are audited.
+  - Suspended and cancelled businesses get 403.
+- **Several businesses:** a member of two businesses switches between them with the header and sees each team separately.
+- **Across businesses:** members of another business cannot be changed or removed, even by an owner (404).
+- **Business profile:**
+  - Owners and admins can edit it, agents cannot.
+  - The audit log records which fields changed.
+  - Invalid input gets 422: an empty body, nulls, an unknown timezone, a bad locale, or an extra field.
+- **Team list:** every member can see it, with owners first, then admins, then agents.
+- **The full role table:** 9 role-change cases and 11 remove/leave cases.
+- **Removal and roles:**
+  - A removed member loses access on their very next request.
+  - Unknown roles are rejected.
+- **Last owner:**
+  - The sole owner can neither demote themselves nor leave.
+  - Ownership is handed over by promoting someone else first.
+  - Two owners demoting each other at the same moment still leave one owner.
+
 ## Exact next task
 
-**Stage 2, step 2.4 — Tenant context, roles, business and team endpoints:**
-1. `TenantContext` dependency: `X-Tenant-ID` → active membership check (404 + security log if none) → sets `app.tenant_id`; `ctx.require(role)`.
-2. `GET/PATCH /tenant` (profile, timezone, locale; admin+ to edit).
-3. `GET /tenant/members`, `PATCH /tenant/members/{user_id}` (role), `DELETE /tenant/members/{user_id}` (remove or leave), enforcing the role matrix and the last-owner rule.
-4. Audit `tenant.updated`, `member.role_changed`, `member.removed`.
-5. Tests: the full role matrix, cross-tenant 404s for a user in two businesses, a forged `X-Tenant-ID`, last-owner protection.
+**Stage 2, step 2.5 — Email, outbox and Celery worker:**
+1. Add `celery`. Create the Celery app, an outbox relay task (`FOR UPDATE SKIP LOCKED`, retries, failed state), and a `worker` service in compose.
+2. Add a Mailpit container for local mail. Add SMTP settings (Postmark in production).
+3. Email sending via the standard library `smtplib`, with plain text and HTML templates.
+4. Password reset: `forgot` (always 202) and `reset` (single-use token, revokes all sessions).
+5. Email verification: sent at signup, plus `verify` and `resend`.
+6. Invitations: create, list and revoke (admin+, verified email); `GET` by token; accept (logged in, or create an account); rate limits.
+7. Integration tests through outbox → worker → Mailpit. Docs; stop and report.
 
-Invitations need email, so they come in step 2.5.
+This is the largest step of Stage 2; it may be split into 2.5a (outbox, worker, email, password reset, verification) and 2.5b (invitations), each reviewed separately.
 
 Original Stage 2 brief (now covered by the design document):
 1. Data model for migration `0002`: `users`, `tenants`, `memberships`, `auth_sessions`, `password_reset_tokens`, `invitations`, `audit_logs`. RLS on tenant tables. Tenant mixin (`tenant_id`, `UNIQUE(tenant_id, id)`).
@@ -337,7 +376,7 @@ Suggested before Stage 2:
 |---|---|---|
 | 0 | Architecture review | Done, approved |
 | 1 | Foundation | **Done** (2026-11-12) |
-| 2 | Auth + multi-tenancy | In progress — steps 2.1–2.3 of 7 done |
+| 2 | Auth + multi-tenancy | In progress — steps 2.1–2.4 of 7 done |
 | 3 | CRM | Not started |
 | 4 | Unified inbox | Not started |
 | 5 | Website widget | Not started |
