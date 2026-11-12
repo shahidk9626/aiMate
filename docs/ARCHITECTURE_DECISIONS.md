@@ -117,6 +117,18 @@ Channel tokens stored as ciphertext using envelope encryption: per-record data k
 ### ADR-017 Local infrastructure via Docker Compose — Accepted (2026-11-12)
 `infra/docker-compose.yml` runs PostgreSQL 17 and Redis 8 (Alpine images) for local development. Ports bind to `127.0.0.1` only. Redis requires a password even locally, so the app is written against an authenticated Redis from day one. Credentials come from the git-ignored root `.env`; the Compose file refuses to start if they are missing. Application services are added to the same file as they are built.
 
+### ADR-018 API skeleton conventions — Accepted (2026-11-12)
+- `create_app(settings)` factory; settings are injected so tests never read the developer's `.env`.
+- Request id and access logging are **pure ASGI middleware**, not `BaseHTTPMiddleware`, so SSE streaming (ADR-010) is unaffected.
+- Access log records method, path, status, duration, request id — never the query string. uvicorn's own access log is disabled.
+- Log redaction of known secret keys is a safety net; the rule remains "log identifiers, not content".
+- Health probes live at the root (`/healthz`, `/readyz`), product routes under `/api/v1`.
+- OpenAPI/Swagger published in local/test/staging, disabled in production.
+- mypy runs in strict mode; ruff includes the bandit (`S`) security rules.
+
+### ADR-019 `httpx2` for the test client — Accepted (2026-11-12)
+Starlette 1.10 (pulled in by FastAPI 0.162) deprecates `httpx` for `TestClient` and emits a warning on import; our pytest config turns warnings into errors. Starlette's docs require `httpx2`, the successor to httpx by the same author, maintained under the Pydantic organisation. It is a **dev-only** dependency for now. The outbound HTTP client for Meta/OpenAI is chosen in the stage that needs it.
+
 ### Deferred
 - Vector store for knowledge retrieval (pgvector in the same Postgres is the default candidate) — Stage 6.
 - Billing provider (Stripe for US/UK, Razorpay for India are the candidates) — Stage 9.

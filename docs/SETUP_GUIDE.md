@@ -1,6 +1,6 @@
 # Setup Guide
 
-**Status: local PostgreSQL and Redis are runnable (Stage 1, step 1).** The API and web app do not exist yet. Commands are added here as each piece is built and verified; this file must never describe a step that has not been run successfully.
+**Status: local PostgreSQL, Redis and the API skeleton are runnable (Stage 1, steps 1–2).** The web app does not exist yet. Commands are added here as each piece is built and verified; this file must never describe a step that has not been run successfully.
 
 ## Required tooling (planned)
 
@@ -36,7 +36,9 @@ Backend runtime:
 | structlog | 26.x | Structured JSON logging |
 | openai | 3.x | First LLM adapter (Stage 6, not before) |
 
-Backend dev: pytest 9.x, pytest-asyncio, ruff, mypy.
+Backend dev: pytest 9.x, httpx2 2.16.x (Starlette TestClient, ADR-019), ruff 0.17.x, mypy 2.4.x. pytest-asyncio is added only when async DB tests need it (step 3).
+
+**Installed and locked in step 2** (`apps/api/uv.lock`): fastapi 0.162.5, starlette 1.10.0, uvicorn 0.54.0, pydantic 2.14.3, pydantic-settings 2.16.2, structlog 26.1.0, pytest 9.2.0, httpx2 2.16.0, ruff 0.17.4, mypy 2.4.1.
 
 Frontend: Next.js 16.x, React 19.x, Tailwind CSS 4.x, TypeScript (version as pinned by the Next.js scaffold — TypeScript 7.0 is very new and is adopted only if the Next.js toolchain supports it).
 
@@ -117,6 +119,46 @@ Troubleshooting:
 - Port already in use: change `POSTGRES_PORT` / `REDIS_PORT` in `.env`.
 - Changing `POSTGRES_PASSWORD` after the first start has no effect on the existing volume; run `down -v` to re-initialise (deletes data).
 
-### 2. API, worker and web
+### 2. API (verified 2026-11-12)
 
-To be written as each is built (Stage 1, steps 2–5).
+Prerequisites: Python 3.13 and [uv](https://docs.astral.sh/uv/). All commands from `apps/api`.
+
+Install dependencies (creates `apps/api/.venv` from the lockfile):
+
+```bash
+uv sync
+```
+
+Run the API with auto-reload:
+
+```bash
+uv run uvicorn app.main:app --reload --no-access-log
+```
+
+Check it: http://127.0.0.1:8000/healthz returns `{"status":"ok"}`; Swagger UI is at http://127.0.0.1:8000/api/v1/docs.
+
+Quality checks (all three must pass before committing):
+
+```bash
+uv run pytest
+```
+
+```bash
+uv run ruff check . && uv run ruff format --check .
+```
+
+```bash
+uv run mypy
+```
+
+API settings (all optional for now; set in the shell or `apps/api/.env`):
+
+| Variable | Default | Notes |
+|---|---|---|
+| `APP_ENV` | `local` | `local`, `test`, `staging`, `production`. Production hides the API docs |
+| `LOG_LEVEL` | `INFO` | `DEBUG` … `CRITICAL` |
+| `LOG_JSON` | auto | Human-readable logs in `local`, JSON everywhere else |
+
+### 3. Worker and web
+
+To be written as each is built (Stage 1, steps 3–5).

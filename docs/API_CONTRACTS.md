@@ -1,6 +1,6 @@
 # API Contracts
 
-**Status: PROPOSED. No endpoint is implemented yet.** Each endpoint is marked Implemented with its request/response schema when it ships. The generated OpenAPI document (`/api/v1/openapi.json`) becomes the machine-readable contract; TypeScript types in `packages/contracts` are generated from it.
+**Status: health probe and error envelope implemented (Stage 1, step 2); everything else PROPOSED.** Each endpoint is marked Implemented with its request/response schema when it ships. The generated OpenAPI document (`/api/v1/openapi.json`) becomes the machine-readable contract; TypeScript types in `packages/contracts` are generated from it.
 
 ## Conventions
 
@@ -24,11 +24,27 @@ Error:
 
 Cross-tenant access returns `404`, never `403`, so record existence is not revealed. Validation errors are `422` with field-level `details`. Rate limiting is `429` with `Retry-After`.
 
-## Stage 1 — Foundation
-| Method + path | Purpose | Access |
+### Error envelope — Implemented (Stage 1, step 2)
+
+| Situation | Status | `error.code` |
 |---|---|---|
-| `GET /healthz` | Liveness | Public |
-| `GET /readyz` | DB + Redis reachable | Public |
+| Service raises `AppError` subclass | its status | its code (e.g. `LEAD_NOT_FOUND`) |
+| Body/query validation fails | 422 | `VALIDATION_ERROR`; `details` = `[{field, message, type}]`, submitted values are **never** echoed |
+| Unknown route | 404 | `NOT_FOUND` |
+| Wrong method | 405 | `METHOD_NOT_ALLOWED` (+ `Allow` header) |
+| Unhandled exception | 500 | `INTERNAL_ERROR`, generic message, no internals; full traceback logged with request id |
+
+`X-Request-ID`: a caller-supplied value is reused only if it matches `^[A-Za-z0-9._-]{8,64}$`; otherwise a new 32-char hex id is generated. Present on every response, including 500s.
+
+## Stage 1 — Foundation
+
+Health probes are mounted at the root, outside `/api/v1`: they are infrastructure endpoints, not product API, and are not wrapped in the envelope.
+
+| Method + path | Purpose | Access | Status |
+|---|---|---|---|
+| `GET /healthz` | Liveness; no dependency checks. `200 {"status":"ok"}` | Public | **Implemented** |
+| `GET /readyz` | DB + Redis reachable | Public | Step 3 |
+| `GET /api/v1/openapi.json`, `GET /api/v1/docs` | OpenAPI schema, Swagger UI | Public, **disabled in production** | **Implemented** |
 
 ## Stage 2 — Auth and tenancy
 | Method + path | Purpose | Access |

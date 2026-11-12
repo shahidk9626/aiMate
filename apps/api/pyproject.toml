@@ -1,0 +1,54 @@
+[project]
+name = "leadflow-api"
+version = "0.1.0"
+description = "AI LeadFlow API and background worker"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi>=0.162,<0.163",
+    "uvicorn[standard]>=0.54,<0.55",
+    "pydantic-settings>=2.16,<3",
+    "structlog>=26.1,<27",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2,<10",
+    "httpx2>=2.16,<3",  # Starlette TestClient (successor to httpx)
+    "ruff>=0.17,<0.18",
+    "mypy>=2.4,<3",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+filterwarnings = ["error"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F",   # pycodestyle, pyflakes
+    "I",             # import sorting
+    "B",             # bugbear
+    "UP",            # pyupgrade
+    "S",             # bandit security checks
+    "N",             # naming
+    "SIM", "RUF",
+    "ASYNC",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# assert is the point of a test; fake secrets are deliberate test inputs
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["app", "tests"]

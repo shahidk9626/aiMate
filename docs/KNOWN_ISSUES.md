@@ -33,6 +33,10 @@ None open. Decisions D1–D10 from the Day 1 review were approved on 2026-11-12 
 - Python and Node dependency versions in `SETUP_GUIDE.md` were looked up, not installed; compatibility is confirmed as each step installs and tests them.
 - Development environment only: anonymous pulls from Docker Hub were rate-limited (HTTP 429) in the cloud development container on 2026-11-12. The PostgreSQL image was pulled from Google's Docker Hub mirror (`mirror.gcr.io/library/postgres:17-alpine`, same official image) and tagged locally. This does not affect a developer machine or the VPS. If it recurs on a server, log in to Docker Hub or use the mirror.
 
+- `/healthz` requests are written to the access log. Fine locally; once uptime monitors poll it every few seconds this becomes noise. Revisit (sample or skip health paths) at Stage 1 step 5 / deployment.
+- The API has no CORS, security headers, rate limiting or body-size limit yet. These arrive with the first endpoints that need them (Stage 2 auth) and are tracked there, not forgotten.
+- Development environment only: the cloud container sets a deprecated `UV_NATIVE_TLS` variable, so `uv` prints a warning. Harmless; unrelated to the project.
+
 ## Bugs
 
 None.
