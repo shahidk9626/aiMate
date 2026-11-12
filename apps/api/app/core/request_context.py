@@ -21,6 +21,10 @@ _SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
 
 logger = get_logger("app.access")
 
+# Probes polled by Docker, load balancers and uptime monitors. Successful calls
+# are not logged (they would drown real traffic); failures still are.
+QUIET_PATHS = frozenset({"/healthz", "/readyz"})
+
 
 def _incoming_request_id(scope: Scope) -> str | None:
     wanted = REQUEST_ID_HEADER.lower().encode("latin-1")
@@ -58,11 +62,13 @@ class RequestContextMiddleware:
             try:
                 await self.app(scope, receive, send_wrapper)
             finally:
-                logger.info(
-                    "request",
-                    method=scope["method"],
-                    # Path only: query strings can carry personal data.
-                    path=scope["path"],
-                    status=status_code,
-                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
-                )
+                quiet = scope["path"] in QUIET_PATHS and status_code < 400
+                if not quiet:
+                    logger.info(
+                        "request",
+                        method=scope["method"],
+                        # Path only: query strings can carry personal data.
+                        path=scope["path"],
+                        status=status_code,
+                        duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                    )

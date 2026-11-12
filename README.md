@@ -2,7 +2,7 @@
 
 AI-powered enquiry automation and unified CRM for businesses. Instagram, Facebook Messenger and website enquiries flow into one workspace, where an AI agent answers from the business's approved knowledge, qualifies the lead, and hands over to a person when needed.
 
-**Status:** Stage 1 (Foundation) in progress. See [`docs/DEVELOPMENT_PROGRESS.md`](docs/DEVELOPMENT_PROGRESS.md).
+**Status:** Stage 1 (Foundation) complete; Stage 2 (authentication and multi-tenancy) next. See [`docs/DEVELOPMENT_PROGRESS.md`](docs/DEVELOPMENT_PROGRESS.md).
 
 ## Repository layout
 
@@ -24,6 +24,11 @@ Directories appear when their step is built; nothing is scaffolded ahead of time
 ## Quick start
 
 Prerequisites: Docker, Python 3.13 + [uv](https://docs.astral.sh/uv/), Node.js 22.12+ with pnpm (`corepack enable`).
+
+**Fastest (only Docker needed):** `cp .env.example .env`, replace every `change-me` value, then
+`docker compose --env-file .env -f infra/docker-compose.yml --profile app up -d --build` and open http://localhost:3000.
+
+**For development (run the API and web app on your machine):**
 
 1. Settings: `cp .env.example .env`, then replace every `change-me` value.
 2. Data services: `docker compose --env-file .env -f infra/docker-compose.yml up -d`

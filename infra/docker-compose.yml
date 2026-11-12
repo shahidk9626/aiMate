@@ -1,9 +1,14 @@
-# Local development infrastructure for AI LeadFlow.
-# Run from the repository root:
+# Local stack for AI LeadFlow. Run from the repository root.
+#
+# Data services only (for running the API and web app on your machine):
 #   docker compose --env-file .env -f infra/docker-compose.yml up -d
 #
-# Stage 1 step 1: data services only. The api, worker and web services are
-# added in later steps once they exist.
+# Everything in containers (data services + migrations + API + web):
+#   docker compose --env-file .env -f infra/docker-compose.yml --profile app up -d --build
+#   then open http://localhost:3000
+#
+# Do not run both at once on the same ports: stop the locally running API/web
+# first, or change API_PORT / WEB_PORT in .env.
 
 name: leadflow
 
@@ -46,6 +51,78 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # One-off: create/update the restricted app role, then apply migrations.
+  # The ONLY service that receives the owner credentials.
+  migrate:
+    profiles: ["app"]
+    build:
+      context: ../apps/api
+    image: leadflow-api:local
+    command: ["sh", "-c", "python -m app.db.bootstrap && alembic upgrade head"]
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      APP_DB_USER: ${APP_DB_USER:-leadflow_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    profiles: ["app"]
+    build:
+      context: ../apps/api
+    image: leadflow-api:local
+    restart: unless-stopped
+    # Runtime role only: no POSTGRES_USER / POSTGRES_PASSWORD here.
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_DB_USER: ${APP_DB_USER:-leadflow_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Ready = database and Redis reachable (stricter than the image's liveness check).
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  web:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        # The browser on your machine calls the API through the published port.
+        NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-8000}
+    image: leadflow-web:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   postgres_data:

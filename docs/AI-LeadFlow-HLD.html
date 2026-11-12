@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI LeadFlow — High Level Design</title>
+<title>AI LeadFlow — High Level Design v1.1</title>
 <style>
 :root{--bg:#0b1020;--panel:#121a2d;--panel2:#18233b;--line:#2a3958;--text:#edf3ff;--muted:#9aabc8;--blue:#6ea8fe;--teal:#56d6c2;--purple:#b49aff;--orange:#ffbd75}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0%,#172544 0,transparent 35%),var(--bg);color:var(--text);font:15px/1.55 Inter,ui-sans-serif,system-ui,Arial}
@@ -12,16 +12,27 @@ main{max-width:1200px;margin:auto;padding:10px 24px 60px}.section{background:lin
 @media(max-width:760px){.row,.cards,.two{grid-template-columns:1fr}.section{padding:16px}header{padding-top:30px}.table{font-size:13px}}
 </style></head>
 <body>
-<header><div class="eyebrow">AI LeadFlow · Architecture v1.0</div><h1>High Level System Design</h1><p class="sub">A multi-tenant AI enquiry automation and CRM platform. Instagram, Facebook Messenger and website enquiries flow into one business workspace, where AI can respond, qualify leads and hand conversations to people.</p><span class="tag">Next.js</span><span class="tag">FastAPI</span><span class="tag">PostgreSQL</span><span class="tag">Redis / Worker</span><span class="tag">Meta APIs</span></header>
+<header><div class="eyebrow">AI LeadFlow · Architecture v1.1 · 2026-11-12</div><h1>High Level System Design</h1><p class="sub">A multi-tenant AI enquiry automation and CRM platform. Instagram, Facebook Messenger and website enquiries flow into one business workspace, where AI can respond, qualify leads and hand conversations to people.</p><span class="tag">Next.js</span><span class="tag">FastAPI</span><span class="tag">PostgreSQL</span><span class="tag">Redis + Celery</span><span class="tag">OpenAI (via adapter)</span><span class="tag">Meta APIs</span><span class="tag">Docker · Cloudflare · VPS</span></header>
 <main>
+<section class="section"><h2>What changed in v1.1</h2><p class="sub">Approved by the product owner on 2026-11-12 after the Day 1 architecture review. Full reasoning: <code>docs/ARCHITECTURE_DECISIONS.md</code> (ADR-001 – ADR-021).</p>
+<table class="table"><tr><th>Area</th><th>v1.1 decision</th></tr>
+<tr><td>Stack</td><td>Python FastAPI + SQLAlchemy 2.1 + Alembic + PostgreSQL 17; Redis + <b>Celery</b> (ARQ dropped); Next.js 16 + TypeScript + Tailwind; OpenAI behind a provider-independent adapter. NestJS/Drizzle are not used.</td></tr>
+<tr><td>Tenant isolation</td><td>Application-level checks <b>plus PostgreSQL Row Level Security from the first table</b>. The app connects as a restricted role without BYPASSRLS; each transaction carries the verified tenant id.</td></tr>
+<tr><td>Tenant selection</td><td>A user can belong to several businesses; the active one is sent as <code>X-Tenant-ID</code> and verified against membership on every request.</td></tr>
+<tr><td>Sessions</td><td>Short-lived access token + rotating refresh token in HttpOnly cookies, CSRF protection, one trusted browser origin (CORS).</td></tr>
+<tr><td>Real time</td><td>Server-Sent Events (Redis pub/sub) for the inbox and widget.</td></tr>
+<tr><td>Reliability</td><td>Transactional outbox for every database-to-queue handoff.</td></tr>
+<tr><td>Delivery plan</td><td>Nine stages (section 7) replace the five-stage plan. WhatsApp is post-MVP.</td></tr>
+<tr><td>Deployment</td><td>Docker images for API and web; single VPS behind Cloudflare for pilots (section 4).</td></tr>
+<tr><td>Compliance</td><td>Pilots start with non-healthcare segments; US healthcare (HIPAA) only after legal advice. Data region decided before first production deployment.</td></tr></table></section>
 <section class="section"><h2>1. System context</h2><div class="diagram">
 <div class="row"><div class="node blue"><b>Instagram</b><small>DMs · permitted comment triggers</small></div><div class="node blue"><b>Facebook Messenger</b><small>Page conversations</small></div><div class="node blue"><b>Business website</b><small>Chat widget · enquiry forms</small></div></div>
 <div class="arrow">↓ Secure webhooks / widget events ↓</div>
 <div class="node teal"><b>FastAPI Application Layer</b><small>Webhook endpoints · REST API · authentication · tenant authorization · validation</small></div>
 <div class="arrow">↓</div>
-<div class="row"><div class="node purple"><b>Channel Adapters</b><small>Normalize incoming events; send replies through provider APIs</small></div><div class="node purple"><b>AI Orchestrator</b><small>Business context · intent · response policy · tool selection</small></div><div class="node purple"><b>CRM Services</b><small>Contacts · leads · assignments · pipeline</small></div></div>
+<div class="row"><div class="node purple"><b>Channel Adapters</b><small>Normalize incoming events; send replies through provider APIs; deduplicate per provider message id</small></div><div class="node purple"><b>AI Orchestrator</b><small>Business context · intent · response policy · tool selection</small></div><div class="node purple"><b>CRM Services</b><small>Contacts · leads · assignments · pipeline</small></div></div>
 <div class="arrow">↕</div>
-<div class="row"><div class="node"><b>PostgreSQL</b><small>Tenant-scoped business data and audit trail</small></div><div class="node"><b>Redis + Worker</b><small>Queues · retries · async AI and outbound work</small></div><div class="node"><b>Object Storage</b><small>Knowledge files and uploaded assets (later)</small></div></div>
+<div class="row"><div class="node"><b>PostgreSQL</b><small>Tenant-scoped data with Row Level Security · audit trail · transactional outbox</small></div><div class="node"><b>Redis + Celery worker</b><small>Queues · retries · async AI and outbound work · SSE pub/sub</small></div><div class="node"><b>Object Storage</b><small>Knowledge files and uploaded assets (later)</small></div></div>
 <div class="arrow">↕</div>
 <div class="node orange"><b>Next.js SaaS Dashboard</b><small>Business owner · Sales agents · Platform admin</small></div>
 </div></section>
@@ -33,21 +44,23 @@ main{max-width:1200px;margin:auto;padding:10px 24px 60px}.section{background:lin
 <div class="card"><h3>Automation</h3><p>Event-triggered workflows, notifications, reminders and permitted follow-up sequences.</p></div>
 <div class="card"><h3>Analytics & billing</h3><p>Channel volumes, response time, qualified leads, conversion metrics, plans and usage limits.</p></div>
 </div></section>
-<section class="section"><h2>3. Core enquiry lifecycle</h2><div class="flow"><span class="pill">Customer message</span><span class="arr">→</span><span class="pill">Verify + deduplicate</span><span class="arr">→</span><span class="pill">Normalize event</span><span class="arr">→</span><span class="pill">Find tenant/contact</span><span class="arr">→</span><span class="pill">AI policy + context</span><span class="arr">→</span><span class="pill">Reply / escalate</span><span class="arr">→</span><span class="pill">Update CRM</span></div><p class="sub">The inbound event is persisted before asynchronous processing. Outbound messages are queued, retried safely and recorded. A human agent can take over at any point.</p></section>
+<section class="section"><h2>3. Core enquiry lifecycle</h2><div class="flow"><span class="pill">Customer message</span><span class="arr">→</span><span class="pill">Verify + deduplicate</span><span class="arr">→</span><span class="pill">Normalize event</span><span class="arr">→</span><span class="pill">Find tenant/contact</span><span class="arr">→</span><span class="pill">AI policy + context</span><span class="arr">→</span><span class="pill">Reply / escalate</span><span class="arr">→</span><span class="pill">Update CRM</span></div><p class="sub">The inbound event is persisted before asynchronous processing. Outbound messages are queued, retried safely and recorded. A human agent can take over at any point; takeover switches the conversation to human handling and silences the AI. The AI never invents prices, offers, availability or promises: when knowledge is missing it asks or hands off.</p></section>
 <section class="section"><h2>4. Deployment view</h2><div class="two">
-<div class="card"><h3>Application services</h3><p>Next.js web app and FastAPI API deployed independently. Worker process runs separately from HTTP request handling.</p></div>
-<div class="card"><h3>Managed infrastructure</h3><p>PostgreSQL database, Redis queue/cache, encrypted secrets, object storage, TLS, backups, logs and monitoring.</p></div>
+<div class="card"><h3>Application services</h3><p>Separate Docker images for the Next.js web app (standalone server) and the FastAPI API. The same API image runs migrations (one-off) and, from Stage 2, the Celery worker. Containers run as non-root users and receive secrets only as runtime environment variables.</p></div>
+<div class="card"><h3>Infrastructure (pilot phase)</h3><p>Single VPS running Docker Compose behind Cloudflare (DNS, TLS, WAF). PostgreSQL and Redis on the VPS with backups, or managed equivalents when volume justifies it. Encrypted secrets, logs and monitoring. Object storage from Stage 6.</p></div>
 </div><div class="note" style="margin-top:14px">MVP principle: start with a modular monolith plus a separate background worker. Avoid microservices until real load and team needs justify them.</div></section>
 <section class="section"><h2>5. Technology choices</h2><table class="table"><tr><th>Layer</th><th>Choice</th><th>Why</th></tr>
 <tr><td>Web</td><td>Next.js + TypeScript</td><td>Dashboard, onboarding and embedded website widget management.</td></tr>
 <tr><td>API</td><td>Python + FastAPI</td><td>Typed APIs, async I/O and straightforward AI ecosystem integration.</td></tr>
 <tr><td>Database</td><td>PostgreSQL</td><td>Relational CRM data, transactions, JSONB metadata and constraints.</td></tr>
 <tr><td>ORM / migrations</td><td>SQLAlchemy 2 + Alembic</td><td>Native Python persistence and schema migrations.</td></tr>
-<tr><td>Async jobs</td><td>Redis + Celery (or ARQ)</td><td>Webhook processing, AI generation, retries and outbound delivery.</td></tr>
-<tr><td>AI</td><td>Provider adapter; model configurable</td><td>Keep vendor choice replaceable; apply tenant-level limits and policies.</td></tr>
+<tr><td>Async jobs</td><td>Redis + Celery</td><td>Webhook processing, AI generation, retries and outbound delivery.</td></tr>
+<tr><td>AI</td><td>OpenAI API behind a provider adapter; model configurable</td><td>Keep vendor choice replaceable; apply tenant-level limits and policies.</td></tr>
+<tr><td>Infrastructure</td><td>Docker, Docker Compose, Cloudflare, VPS</td><td>Simple, low-cost operations for the pilot phase; portable to managed services later.</td></tr>
+<tr><td>Testing</td><td>Pytest (unit + integration on real PostgreSQL), Vitest + Testing Library, contract tests</td><td>Tenant isolation and security rules are verified against the real database, not mocks.</td></tr>
 <tr><td>Social channels</td><td>Meta Graph / Messenger APIs</td><td>Official supported integrations, subject to permissions and platform policies.</td></tr></table></section>
 <section class="section"><h2>6. Trust boundaries and non-functional requirements</h2><div class="cards">
-<div class="card"><h3>Tenant isolation</h3><p>Every business record is tenant-scoped. Authorization is enforced server-side on every query and mutation.</p></div>
+<div class="card"><h3>Tenant isolation</h3><p>Every business record is tenant-scoped. Authorization is enforced server-side on every query and mutation, and PostgreSQL Row Level Security blocks cross-tenant rows even if application code is wrong.</p></div>
 <div class="card"><h3>Webhook safety</h3><p>Verify provider signatures where supported, validate payloads, deduplicate events and reject replays.</p></div>
 <div class="card"><h3>Credential security</h3><p>Encrypt provider tokens at rest, redact logs, rotate secrets and restrict access.</p></div>
 <div class="card"><h3>Reliability</h3><p>Idempotent jobs, retry with backoff, dead-letter handling and observable delivery states.</p></div>
@@ -55,10 +68,14 @@ main{max-width:1200px;margin:auto;padding:10px 24px 60px}.section{background:lin
 <div class="card"><h3>Privacy</h3><p>Retention controls, access audit, export/deletion workflows and minimal personal data collection.</p></div>
 </div></section>
 <section class="section"><h2>7. MVP scope and delivery sequence</h2><table class="table"><tr><th>Stage</th><th>Scope</th><th>Exit criterion</th></tr>
-<tr><td>1 · Foundation</td><td>Auth, tenants, memberships, CRM schema, local environment</td><td>Two tenants can use the app with isolated data.</td></tr>
-<tr><td>2 · Website channel</td><td>Embeddable widget, enquiry capture, unified inbox</td><td>Website enquiry becomes a contact, lead and conversation.</td></tr>
-<tr><td>3 · AI assistant</td><td>Knowledge base, response orchestration, human handoff</td><td>Grounded answer and safe escalation work end-to-end.</td></tr>
-<tr><td>4 · Meta channels</td><td>Instagram and Facebook onboarding, webhooks and replies</td><td>Approved test accounts exchange messages reliably.</td></tr>
-<tr><td>5 · Commercial</td><td>Usage metering, billing, analytics and onboarding</td><td>First pilot customer can be onboarded and supported.</td></tr></table></section>
-<div class="footer">AI LeadFlow · HLD v1.0 · Working architecture, to be refined during implementation</div>
+<tr><td>1 · Foundation</td><td>Monorepo, FastAPI, Next.js, PostgreSQL + RLS foundation, Alembic, Redis, Docker, logging, health checks</td><td>Whole stack starts with one command; tenant isolation proven by tests.</td></tr>
+<tr><td>2 · Auth + multi-tenancy</td><td>Signup, login, logout, password reset, tenants, memberships, roles, invitations</td><td>Two tenants use the app with isolated data.</td></tr>
+<tr><td>3 · CRM</td><td>Contacts, leads, sources, pipeline, assignment, notes, tasks, search, dashboard</td><td>A team manages leads end to end.</td></tr>
+<tr><td>4 · Unified inbox</td><td>Conversations, messages, assignment, internal notes, human takeover, real time</td><td>Agents work conversations live.</td></tr>
+<tr><td>5 · Website channel</td><td>Embeddable widget, enquiry capture, contact/lead/conversation creation</td><td>Website enquiry becomes a contact, lead and conversation.</td></tr>
+<tr><td>6 · AI engine</td><td>Knowledge base, FAQs, AI settings, qualification, grounded replies, handoff, usage tracking</td><td>Grounded answer and safe escalation work end to end.</td></tr>
+<tr><td>7 · Meta channels</td><td>Instagram and Facebook onboarding, webhooks, replies, permitted comment-to-DM</td><td>Approved test accounts exchange messages reliably.</td></tr>
+<tr><td>8 · Automation + analytics</td><td>Notifications, follow-up rules, pipeline automation, analytics</td><td>Owners see response times and conversions.</td></tr>
+<tr><td>9 · Commercial launch</td><td>Plans, usage limits, billing, onboarding, production deployment, monitoring</td><td>First pilot customer onboarded and supported.</td></tr></table><p class="sub">WhatsApp Business Platform is a post-MVP phase.</p></section>
+<div class="footer">AI LeadFlow · HLD v1.1 (2026-11-12) · Supersedes v1.0 · Decisions: docs/ARCHITECTURE_DECISIONS.md</div>
 </main></body></html>

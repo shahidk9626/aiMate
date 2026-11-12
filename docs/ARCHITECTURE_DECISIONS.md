@@ -10,7 +10,7 @@ Part 1 is the Day 1 review of HLD/LLD v1.0. Part 2 is the decision log.
 
 The overall design is sound: modular monolith, separate worker, durable-before-async ingestion, transactional outbox, typed AI actions, tenant-scoped tables. The findings below are gaps and inconsistencies to correct before code is written.
 
-**All corrections below were approved by the product owner on 2026-11-12.** HLD/LLD HTML revision to v1.1 is scheduled for Stage 1, step 5.
+**All corrections below were approved by the product owner on 2026-11-12.** The HLD/LLD HTML documents were revised to v1.1 with these corrections in Stage 1, step 5.
 
 ### Inconsistencies
 
@@ -151,6 +151,15 @@ Starlette 1.10 (pulled in by FastAPI 0.162) deprecates `httpx` for `TestClient` 
 - **Tests:** Vitest 5 + Testing Library + jsdom, per the Next.js guide. Vite 8 resolves the `@/*` alias natively (`resolve.tsconfigPaths`), so `vite-tsconfig-paths` is not needed. Tests sit beside the code as `*.test.ts(x)`.
 - **Data fetching in client components** follows the React lint rule `set-state-in-effect`: state is set only in promise callbacks; refreshes are triggered by changing a key, and superseded requests are aborted and ignored.
 - **Development preview pages are `noindex`** until launch.
+
+### ADR-022 Container images and one-command local stack — Accepted (2026-11-12)
+- **API image** (`apps/api/Dockerfile`): multi-stage, `python:3.13-slim-trixie`; `uv` 0.11.32 installed from PyPI in the build stage (the `ghcr.io/astral-sh/uv` image is not required); locked runtime dependencies only (no dev tools, no tests); non-root user `leadflow` (uid 10001); code and virtualenv root-owned and read-only to the app; no `.env` in the image. The same image runs the API, the one-off migrations and, later, the Celery worker.
+- **Web image** (`apps/web/Dockerfile`, context = repo root): `node:22-trixie-slim`; pnpm via corepack from the lockfile; Next.js `output: "standalone"` with `outputFileTracingRoot` at the repo root; runs as `node`; `NEXT_PUBLIC_API_URL` as a build argument; an allow-list `Dockerfile.dockerignore` keeps the context to the files the build needs. `X-Powered-By` disabled.
+- **Optional `extra_ca` build secret** in both Dockerfiles for networks that intercept TLS; it is only mounted during install/build steps and never stored in a layer (verified with `docker history`).
+- **Compose profile `app`** adds `migrate`, `api`, `web` to the existing data services, so `docker compose up` without the profile keeps the local-development workflow unchanged. `migrate` is the only service given the owner credentials; `api` gets only the runtime role. Health-gated start order: postgres/redis healthy → migrate completed → api ready (`/readyz`) → web.
+- **Base images on Debian 13 (trixie).**
+- **Health probes are not access-logged when they succeed** (failures still are), and the API logs its trusted `web_origin` at startup.
+- Production deployment (TLS via Cloudflare, secrets on the VPS, backups, image registry) is designed in Stage 9; these images are its starting point.
 
 ### Deferred
 - Vector store for knowledge retrieval (pgvector in the same Postgres is the default candidate) — Stage 6.

@@ -1,6 +1,6 @@
 # Setup Guide
 
-**Status: local PostgreSQL, Redis, the API (with role bootstrap and migrations) and the web app are runnable (Stage 1, steps 1–4).** Everything runs from your machine; the all-in-Docker setup comes in step 5. Commands are added here as each piece is built and verified; this file must never describe a step that has not been run successfully.
+**Status: Stage 1 complete.** Run the parts individually on your machine (sections 1–5, best for development), or the whole stack in Docker with one command (section 6). Commands are added here as each piece is built and verified; this file must never describe a step that has not been run successfully.
 
 ## Required tooling (planned)
 
@@ -61,6 +61,8 @@ One root `.env` (copied from `.env.example`) serves docker compose and the API. 
 | `WEB_ORIGIN` | `http://localhost:3000` | The single browser origin allowed by CORS. Must be a public `https` origin in staging/production |
 
 Web app (`apps/web/.env.local`, see `apps/web/.env.example`): `NEXT_PUBLIC_API_URL`, default `http://localhost:8000` in development, **required** for production builds and baked in at build time. Only non-secret values may use `NEXT_PUBLIC_`.
+
+Full Docker stack (`--profile app`) also uses `API_PORT` (default `8000`) and `WEB_PORT` (default `3000`); the API's `WEB_ORIGIN` and the web build's API URL are derived from them.
 
 Compose uses `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `REDIS_PASSWORD`, `REDIS_PORT`.
 
@@ -232,6 +234,46 @@ Production build (the API URL is baked into the build):
 NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm build
 ```
 
-### 6. Worker
+### 6. Whole stack in Docker (verified 2026-11-12)
+
+Runs PostgreSQL, Redis, migrations, the API and the web app in containers. Nothing but Docker is needed on your machine. Stop any API or web app you started by hand first (they use the same ports), or change `API_PORT` / `WEB_PORT` in `.env`.
+
+From the repository root:
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.yml --profile app up -d --build
+```
+
+The first build takes a few minutes; later builds reuse cached layers. Then open **http://localhost:3000/status**.
+
+What happens, in order: PostgreSQL and Redis start and become healthy → `migrate` creates/updates the app database role and applies migrations, then exits → `api` starts and becomes healthy once `/readyz` passes → `web` starts.
+
+Check the state of every service (`migrate` should show `Exited (0)`):
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.yml --profile app ps -a
+```
+
+Follow the API logs:
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.yml --profile app logs -f api
+```
+
+Stop everything (data is kept):
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.yml --profile app down
+```
+
+Without `--profile app`, compose starts only PostgreSQL and Redis, as in section 1.
+
+Behind a corporate proxy that intercepts HTTPS, builds can fail with certificate errors. Pass your company's CA bundle as a build secret (used only during the build, never stored in the image):
+
+```bash
+docker build --secret id=extra_ca,src=/path/to/company-ca.pem -t leadflow-api:local apps/api
+```
+
+### 7. Worker
 
 To be written in Stage 2+ when the first background job exists.

@@ -21,7 +21,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
 _API_DIR = Path(__file__).resolve().parents[2]
-_REPO_ROOT = _API_DIR.parents[1]
+# In the repository: apps/api -> repo root two levels up. In the container the
+# API lives at /app and there is no repo root (env vars come from compose).
+_ENV_FILES: tuple[Path, ...] = (
+    (_API_DIR.parents[1] / ".env", _API_DIR / ".env")
+    if len(_API_DIR.parents) >= 2
+    else (_API_DIR / ".env",)
+)
 
 # PostgreSQL role names are used as SQL identifiers in bootstrap/migrations.
 _ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
@@ -40,7 +46,7 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         # Later files override earlier ones; real env vars override both.
-        env_file=(_REPO_ROOT / ".env", _API_DIR / ".env"),
+        env_file=_ENV_FILES,
         env_file_encoding="utf-8",
         extra="ignore",
         frozen=True,

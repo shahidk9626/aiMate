@@ -24,7 +24,9 @@ logger = get_logger("app.lifecycle")
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    logger.info("startup", env=app.state.settings.app_env.value)
+    settings: Settings = app.state.settings
+    # web_origin is logged so a port/host mismatch with the browser is obvious.
+    logger.info("startup", env=settings.app_env.value, web_origin=settings.web_origin)
     try:
         yield
     finally:

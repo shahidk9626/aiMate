@@ -1,7 +1,7 @@
 # AI LeadFlow — Project Context
 
 > Read this file first in any new session, then `DEVELOPMENT_PROGRESS.md` for where we are.
-> Architecture source of truth: `AI-LeadFlow-HLD.html`, `AI-LeadFlow-LLD.html` (v1.0), amended by `ARCHITECTURE_DECISIONS.md`.
+> Architecture source of truth: `AI-LeadFlow-HLD.html`, `AI-LeadFlow-LLD.html` (v1.1, 2026-11-12), with the decision log in `ARCHITECTURE_DECISIONS.md`. When they disagree, the newer decision record wins and the HTML is updated.
 
 ## 1. What we are building
 

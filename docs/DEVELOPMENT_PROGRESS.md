@@ -2,9 +2,9 @@
 
 ## Current state
 
-**Milestone:** Stage 1 — Foundation
-**Status:** Steps 1–4 of 5 complete. Branch `stage-1/foundation`.
-**Next:** Stage 1, step 5 — Docker images, one-command local stack, HLD/LLD v1.1, Stage 1 sign-off (see below).
+**Milestone:** Stage 1 — Foundation — **COMPLETE** (2026-11-12)
+**Branch:** `stage-1/foundation` (not yet merged into `main`).
+**Next:** Stage 2 — Authentication and multi-tenancy. First task: Stage 2 design review (see "Exact next task").
 
 ## Completed
 
@@ -127,23 +127,69 @@ Results:
 | API `pytest` | **91 passed** (71 unit + 20 integration), ruff + strict mypy clean |
 | Real browser (Chromium via Playwright), `next start` + API | All three services "Operational"; with Redis stopped only "Queue & cache" shows "Unavailable"; from untrusted origin `127.0.0.1:3000` the browser blocks the request (CORS) and the page explains it |
 
+### Stage 1, step 5 — Containers, one-command stack, HLD/LLD v1.1 (2026-11-12)
+
+Files created: `apps/api/Dockerfile`, `apps/api/.dockerignore`, `apps/web/Dockerfile`, `apps/web/Dockerfile.dockerignore`.
+Files changed:
+- `infra/docker-compose.yml`: profile `app` with `migrate`, `api`, `web`.
+- `.env.example`: `API_PORT`, `WEB_PORT`.
+- `apps/web/next.config.ts`: standalone output, tracing root, `poweredByHeader: false`.
+- `apps/api/app/core/config.py`: env-file lookup fixed for the container layout. This was a crash bug found during the step; `/app` has no repo root.
+- `apps/api/app/core/request_context.py`: successful health probes not logged.
+- `apps/api/app/main.py`: trusted origin logged at startup.
+- `apps/api/tests/test_logging.py`: 3 new tests, privacy test moved to a logged path.
+- `docs/AI-LeadFlow-HLD.html`, `docs/AI-LeadFlow-LLD.html`: revised to **v1.1**.
+- `README.md`, all docs.
+
+Bug caught in review before commit: the first version of the quiet-probe change used `return` inside `finally`, which would have swallowed exceptions; rewritten as a conditional.
+
+Results:
+| Check | Result |
+|---|---|
+| API `pytest` | **94 passed** (74 unit + 20 integration); ruff + strict mypy clean |
+| Web `pnpm check` | Clean; 16 tests passed; standalone build OK |
+| API image | Builds; runs as uid 10001; code read-only; no dev tools, `.env` or CA in layers; 306 MB |
+| Web image | Builds; runs as `node`; no proxy/CA in layers; API URL baked in; 413 MB |
+| `compose --profile app up` from **empty volumes** | All healthy in ~15 s: migrate bootstrapped role + ran `0001`, api ready, web healthy |
+| Second `up` | migrate re-runs safely (role "updated", no migrations pending) |
+| Browser against containers | Status page all "Operational"; no `X-Powered-By`; API DB sessions use `leadflow_app` |
+| Owner credentials | Only in `migrate` and `postgres` service environments |
+| HLD/LLD v1.1 | Render without errors |
+
+## Stage 1 sign-off
+
+What exists:
+- **Monorepo:** `apps/api` (uv), `apps/web` (pnpm workspace), `infra`, `docs`.
+- **API:** FastAPI with typed settings, JSON logs without PII, request ids, error envelope, CORS for one origin, `/healthz` and `/readyz`.
+- **Database:** PostgreSQL 17 with a restricted runtime role, Alembic baseline, and an RLS mechanism proven by tests.
+- **Web:** Next.js 16 app with a typed API client and a live status page.
+- **Docker:** images for API and web; the whole stack starts with one command.
+- **Tests:** 94 API and 16 web, plus browser checks.
+- **Docs:** up to date, including HLD/LLD v1.1.
+
+Not built in Stage 1, by design: authentication, tenants, any product feature, the Celery worker, CI.
+
 ## Exact next task
 
-**Stage 1, step 5 — Containerised local stack and Stage 1 sign-off:**
-1. `apps/api/Dockerfile` (multi-stage, uv, non-root user, no owner DB credentials in the runtime image) and `apps/web/Dockerfile` (Next.js standalone output, non-root, `NEXT_PUBLIC_API_URL` as build arg).
-2. Add `api`, `web` and a one-off `migrate` service (bootstrap + `alembic upgrade head`) to `infra/docker-compose.yml`, with health checks wired to `/healthz` and `/readyz`.
-3. Verify `docker compose up` brings up the whole stack from a clean checkout; the status page shows all services operational.
-4. Quieten `/healthz` and `/readyz` in the access log.
-5. Revise `docs/AI-LeadFlow-HLD.html` and `AI-LeadFlow-LLD.html` to v1.1 with the approved corrections.
-6. Stage 1 review: update all docs, list what Stage 2 starts with, stop and report.
+**Stage 2 — Authentication and multi-tenancy.** Start with a short design review for approval, before any code:
+1. Data model for migration `0002`: `users`, `tenants`, `memberships`, `auth_sessions`, `password_reset_tokens`, `invitations`, `audit_logs`. RLS on tenant tables. Tenant mixin (`tenant_id`, `UNIQUE(tenant_id, id)`).
+2. Endpoint contracts: register, login, refresh, logout, me, password forgot/reset, tenant profile, members, invitations.
+3. New dependencies to explain: `argon2-cffi` (passwords), `pyjwt` (access tokens).
+4. Security controls landing with auth: CSRF check, login/reset rate limiting, security headers, request size limit, the 500-with-CORS fix.
+5. Decision needed from the product owner: **transactional email provider** (password reset, invitations), from Postmark, Resend or Amazon SES. Local development uses a mail-catcher container.
+6. Web: sign-up, login and workspace selection pages.
+
+Suggested before Stage 2:
+- Merge `stage-1/foundation` into `main` via a pull request.
+- Add a CI workflow (GitHub Actions) that runs the API and web checks on every push.
 
 ## Stage tracker
 
 | Stage | Scope | Status |
 |---|---|---|
 | 0 | Architecture review | Done, approved |
-| 1 | Foundation | In progress — steps 1–4 of 5 done |
-| 2 | Auth + multi-tenancy | Not started |
+| 1 | Foundation | **Done** (2026-11-12) |
+| 2 | Auth + multi-tenancy | Next — design review first |
 | 3 | CRM | Not started |
 | 4 | Unified inbox | Not started |
 | 5 | Website widget | Not started |

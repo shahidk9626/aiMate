@@ -1,0 +1,16 @@
+# Only pyproject.toml, uv.lock, alembic.ini, alembic/ and app/ are copied,
+# but keep the build context small and free of secrets regardless.
+.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+tests/
+.env
+.env.*
+Dockerfile
+.dockerignore
+README.md
