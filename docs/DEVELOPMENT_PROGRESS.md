@@ -2,7 +2,7 @@
 
 ## Current state
 
-**Milestone:** Stage 2 — Authentication and multi-tenancy — step 2.1 of 7 complete
+**Milestone:** Stage 2 — Authentication and multi-tenancy — steps 2.1–2.2 of 7 complete
 **Branch:** `stage-2/auth-tenancy` (based on `stage-1/foundation`; neither merged into `main` yet).
 **Design:** `docs/STAGE_2_DESIGN.md`, approved 2026-11-12 (ADR-023).
 **Stage 1:** COMPLETE (2026-11-12).
@@ -214,15 +214,66 @@ What the new tests prove:
 - The lookup role can't log in, read password hashes or other tables, or create objects; the app role can't become it; PUBLIC can't call the functions.
 - The database itself rejects invalid roles.
 
+### Stage 2, step 2.2 — Security plumbing (2026-11-12)
+
+Dependency added: `argon2-cffi` 25.1.0 (+ `argon2-cffi-bindings` 26.1.0). Verified it installs and hashes inside the Docker image.
+
+Files created:
+- `app/core/security_middleware.py`: security headers, catch-all errors, body limit, CSRF.
+- `app/core/rate_limit.py`, `app/core/client_ip.py`.
+- `app/modules/identity/passwords.py`, `tokens.py`, `cookies.py`.
+- Tests: `test_passwords.py`, `test_tokens_and_cookies.py`, `test_security_middleware.py`, `integration/test_rate_limit.py`.
+
+Files changed:
+- `app/core/config.py`: session lifetimes, `MAX_REQUEST_BODY_BYTES`, `TRUSTED_PROXY`, cookie name/secure.
+- `app/core/errors.py`: error headers, `RateLimitedError`, `envelope_response`.
+- `app/main.py`: middleware order, rate limiter on app state.
+- `pyproject.toml`, `uv.lock`.
+
+Resolved known issue: 500 responses now carry CORS headers.
+
+Results:
+| Check | Result |
+|---|---|
+| `pytest` | **163 passed**: 42 new (unit + Redis integration) |
+| ruff, strict mypy | Clean (59 files) |
+| API Docker image | Builds; Argon2id hashing works in the container |
+
+What the new tests prove:
+- **CSRF:**
+  - Writes without the header are rejected, and so are writes from untrusted or `null` origins (including `localhost:3001`).
+  - Trusted-origin writes and non-browser writes that send the header pass.
+  - Reads, preflights and webhooks are unaffected.
+  - Rejections carry CORS, request id and security headers.
+- **Size limit:** oversized declared and streamed bodies get 413; normal bodies pass.
+- **Responses:** security headers on 200/404/500; `no-store` on the API.
+- **Errors:** a 500 reaches the browser with CORS and without internal details; 429 carries `Retry-After`.
+- **Passwords:**
+  - Hashes are Argon2id and salted; right and wrong passwords are told apart, and a corrupt hash is tolerated.
+  - A rehash is flagged when parameters change.
+  - The dummy verification always fails, and the async helpers work.
+  - The policy accepts and rejects exactly per decision E.
+- **Tokens and cookies:**
+  - Tokens are unique and 256-bit, and only their SHA-256 digests are stored.
+  - Cookies have the correct attributes locally and in staging/production, and are cleared correctly.
+- **Client IP:** handled correctly with and without a trusted proxy.
+- **Rate limiter (real Redis):**
+  - It allows up to the limit and then blocks.
+  - Subjects are counted separately and case-insensitively.
+  - Keys contain no personal data and expire.
+  - A Redis outage fails open.
+
 ## Exact next task
 
-**Stage 2, step 2.2 — security plumbing** (no endpoints yet):
-1. Add `argon2-cffi`: password hashing with rehash-on-login and a dummy verify for unknown emails.
-2. Session token helpers: generate, hash, cookie name and attributes per environment.
-3. Redis rate limiter (fixed window, in-house).
-4. CSRF middleware: `X-Requested-With` + `Origin` on unsafe methods.
-5. Security headers middleware; 1 MB request body limit; catch-all error middleware inside CORS (the 500-with-CORS fix).
-6. Unit and integration tests; docs; stop and report.
+**Stage 2, step 2.3 — Auth endpoints** (`app/modules/identity/`): service + router for
+1. `POST /auth/signup`: user, business, owner membership, session, audit; 409 `EMAIL_TAKEN`; rate limit 5/hour/IP.
+2. `POST /auth/login`: constant-time failure, rehash-on-login, `last_login_at`, new session; rate limits 5/min IP+email, 30/min IP.
+3. `POST /auth/logout`.
+4. `current_user` dependency: session lookup via `auth_session_lookup`, idle/absolute expiry, `last_seen_at` touch, sets `app.user_id`.
+5. `GET /me`, `PATCH /me`, `POST /me/password` (revokes other sessions).
+6. Audit entries for each; integration tests end to end through HTTP; docs; stop and report.
+
+Email verification and password reset come with email delivery in step 2.5.
 
 Original Stage 2 brief (now covered by the design document):
 1. Data model for migration `0002`: `users`, `tenants`, `memberships`, `auth_sessions`, `password_reset_tokens`, `invitations`, `audit_logs`. RLS on tenant tables. Tenant mixin (`tenant_id`, `UNIQUE(tenant_id, id)`).
@@ -242,7 +293,7 @@ Suggested before Stage 2:
 |---|---|---|
 | 0 | Architecture review | Done, approved |
 | 1 | Foundation | **Done** (2026-11-12) |
-| 2 | Auth + multi-tenancy | In progress — step 2.1 of 7 done |
+| 2 | Auth + multi-tenancy | In progress — steps 2.1–2.2 of 7 done |
 | 3 | CRM | Not started |
 | 4 | Unified inbox | Not started |
 | 5 | Website widget | Not started |

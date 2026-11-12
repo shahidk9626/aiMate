@@ -178,6 +178,17 @@ Approved by the product owner as recommended in `docs/STAGE_2_DESIGN.md` §2.
 - **RLS now also covers global identity tables (refines ADR-006):** `users`, `auth_sessions` and `email_tokens` are keyed on a second transaction setting, `app.user_id`. A user sees their own rows, plus teammates' user rows in the current tenant. Only `outbox_events` (and `alembic_version`) are without RLS, and a test enforces that list.
 - **Known limit:** RLS scopes rows to `app.tenant_id` but does not itself check that the current user is a member of that tenant. The `tenant_context` dependency (step 2.4) is the only code that sets the tenant for user requests, and signup and invitation acceptance set it after validating their own token. Enforcing membership inside every policy was considered and rejected for now: background workers act for a tenant without a user, and it would complicate every policy.
 
+### ADR-024 Request security plumbing — Accepted (2026-11-12)
+- **Middleware order** (outermost first): CORS → request id → security headers → catch-all errors → body limit → CSRF → app. Every response, including rejections and crashes, carries CORS, `X-Request-ID` and security headers.
+- **Catch-all error middleware inside CORS** replaces reliance on Starlette's outermost error middleware (fixes the Stage 1 known issue: 500s now reach the browser as `INTERNAL_ERROR`).
+- **CSRF:** custom header `X-Requested-With: leadflow` on unsafe `/api/v1` methods (forces a CORS preflight that only `WEB_ORIGIN` passes), plus `Origin == WEB_ORIGIN` when present. Webhook and widget prefixes are exempt by design.
+- **Body limit** counts streamed bytes as well as `Content-Length`. Raised as an `HTTPException(413)` because FastAPI converts other exceptions during body parsing into a generic 400.
+- **Rate limiting:** in-house Redis fixed window (INCR + EXPIRE in a transaction), no new dependency. Subjects are hashed in keys; fails open on Redis errors.
+- **Passwords:** `argon2-cffi` 25.1 with its RFC 9106 default profile (Argon2id, 64 MiB, t=3, p=4), executed in a worker thread; rehash-on-login supported; a dummy verification equalises timing for unknown accounts.
+- **Tokens:** 32 random bytes, URL-safe; only SHA-256 digests stored. A fast hash is correct here because tokens are high-entropy, unlike passwords.
+- **Session cookie:** `lf_session` locally, `__Host-lf_session` with `Secure` elsewhere; HttpOnly, SameSite=Lax, Path=/, no Domain, Max-Age 30 days.
+- **Client IP:** TCP peer by default; `CF-Connecting-IP` only with `TRUSTED_PROXY=cloudflare`.
+
 ### Deferred
 - Vector store for knowledge retrieval (pgvector in the same Postgres is the default candidate) — Stage 6.
 - Billing provider (Stripe for US/UK, Razorpay for India are the candidates) — Stage 9.

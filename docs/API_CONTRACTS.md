@@ -8,6 +8,11 @@
 - Auth: HttpOnly cookies (access + refresh). State-changing requests need header `X-Requested-With: leadflow` and a trusted `Origin`.
 - Tenant: header `X-Tenant-ID: <uuid>` on every tenant-scoped route; verified against membership. Request bodies never contain `tenant_id`.
 - Every response carries `X-Request-ID`.
+- CSRF (implemented, Stage 2 step 2.2): every `POST/PUT/PATCH/DELETE` under `/api/v1/` must send `X-Requested-With: leadflow`; if the request has an `Origin` header it must equal `WEB_ORIGIN`. Otherwise `403 CSRF_REJECTED`. Exempt: `/api/v1/webhooks/*`, `/api/v1/widget/*` (authenticated by signatures / widget tokens).
+- Request size (implemented): bodies over `MAX_REQUEST_BODY_BYTES` (default 1 MB), declared or streamed, get `413 PAYLOAD_TOO_LARGE`.
+- Rate limits (mechanism implemented; rules attach to endpoints from step 2.3): `429 RATE_LIMITED` with a `Retry-After` header in seconds.
+- Security headers on every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`; `Cache-Control: no-store` on all `/api/v1` responses.
+- Unhandled errors return `500 INTERNAL_ERROR` in the envelope **with** CORS and request-id headers, so browsers see the real error.
 - CORS (implemented, Stage 1 step 4): browsers may call the API only from `WEB_ORIGIN` (one origin). Credentials allowed. Methods `GET, POST, PUT, PATCH, DELETE`. Request headers `Content-Type, X-Requested-With, X-Tenant-ID, Idempotency-Key, X-Request-ID`. Exposed: `X-Request-ID`. Preflight cached 10 minutes. Untrusted origins get no CORS headers (preflight `400`).
 - Pagination: cursor based — `?limit=50&cursor=<opaque>`.
 - Roles: `agent < admin < owner`. "Agent+" means agent or higher.

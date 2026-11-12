@@ -58,6 +58,10 @@ One root `.env` (copied from `.env.example`) serves docker compose and the API. 
 | `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | `5` / `5` | Per process |
 | `DB_CONNECT_TIMEOUT_SECONDS` | `5` | |
 | `READINESS_TIMEOUT_SECONDS` | `2` | Per `/readyz` check |
+| `SESSION_IDLE_DAYS` / `SESSION_ABSOLUTE_DAYS` | `7` / `30` | Login session lifetime (Stage 2) |
+| `SESSION_TOUCH_MINUTES` | `5` | How often a session's last-seen time is updated |
+| `MAX_REQUEST_BODY_BYTES` | `1048576` | Larger request bodies get 413 |
+| `TRUSTED_PROXY` | `none` | `cloudflare` only when the API is reachable exclusively through Cloudflare |
 | `WEB_ORIGIN` | `http://localhost:3000` | The single browser origin allowed by CORS. Must be a public `https` origin in staging/production |
 
 Web app (`apps/web/.env.local`, see `apps/web/.env.example`): `NEXT_PUBLIC_API_URL`, default `http://localhost:8000` in development, **required** for production builds and baked in at build time. Only non-secret values may use `NEXT_PUBLIC_`.

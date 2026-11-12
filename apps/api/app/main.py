@@ -15,8 +15,15 @@ from app.api.v1.router import API_V1_PREFIX, api_router
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
+from app.core.rate_limit import RateLimiter
 from app.core.redis import create_redis_client
 from app.core.request_context import REQUEST_ID_HEADER, RequestContextMiddleware
+from app.core.security_middleware import (
+    BodySizeLimitMiddleware,
+    CatchAllErrorsMiddleware,
+    CSRFMiddleware,
+    SecurityHeadersMiddleware,
+)
 from app.db.engine import async_session_factory, create_async_db_engine
 
 logger = get_logger("app.lifecycle")
@@ -55,12 +62,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.db_engine = create_async_db_engine(settings)
     app.state.db_session_factory = async_session_factory(app.state.db_engine)
     app.state.redis = create_redis_client(settings)
+    app.state.rate_limiter = RateLimiter(app.state.redis)
 
     register_exception_handlers(app)
+    # Middleware: each add_middleware wraps the previous ones, so the LAST added
+    # is the OUTERMOST. Resulting order, outermost first:
+    #   CORS → request id → security headers → catch-all errors → body limit → CSRF → app
+    app.add_middleware(CSRFMiddleware, trusted_origin=settings.web_origin)
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_request_body_bytes)
+    app.add_middleware(CatchAllErrorsMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestContextMiddleware)
-    # Added last = outermost, so CORS headers are also set on error responses
-    # produced inside the app. Exactly one trusted origin; credentials allowed
-    # because the dashboard authenticates with HttpOnly cookies (ADR-004).
+    # Exactly one trusted origin; credentials allowed because the dashboard
+    # authenticates with an HttpOnly session cookie (ADR-023).
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[settings.web_origin],

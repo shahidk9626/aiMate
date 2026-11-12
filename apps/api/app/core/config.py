@@ -87,6 +87,16 @@ class Settings(BaseSettings):
     # Origin check for CSRF in Stage 2). Exactly one origin, no wildcard.
     web_origin: str = "http://localhost:3000"
 
+    # --- Sessions and request limits (ADR-023) ----------------------------------
+    session_idle_days: int = Field(default=7, ge=1, le=90)
+    session_absolute_days: int = Field(default=30, ge=1, le=365)
+    # How often last_seen_at is refreshed (avoids a write on every request).
+    session_touch_minutes: int = Field(default=5, ge=1, le=60)
+    max_request_body_bytes: int = Field(default=1_048_576, ge=1024, le=50 * 1_048_576)
+    # "cloudflare": trust CF-Connecting-IP for the client address. Only set this
+    # when the API is reachable exclusively through Cloudflare.
+    trusted_proxy: Literal["none", "cloudflare"] = "none"
+
     @field_validator("web_origin")
     @classmethod
     def _valid_origin(cls, value: str) -> str:
@@ -165,6 +175,16 @@ class Settings(BaseSettings):
     def database_url(self) -> URL:
         """Runtime connection as the restricted app role."""
         return self._pg_url(self.app_db_user, self.app_db_password, None)
+
+    @property
+    def cookies_secure(self) -> bool:
+        """Secure cookies (HTTPS only) everywhere except local development and tests."""
+        return self.app_env not in (Environment.LOCAL, Environment.TEST)
+
+    @property
+    def session_cookie_name(self) -> str:
+        # The __Host- prefix makes browsers enforce Secure, Path=/ and no Domain.
+        return "__Host-lf_session" if self.cookies_secure else "lf_session"
 
     @property
     def db_lookup_role(self) -> str:

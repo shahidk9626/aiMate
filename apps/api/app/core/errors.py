@@ -37,10 +37,12 @@ class AppError(Exception):
         *,
         code: str | None = None,
         details: list[dict[str, Any]] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.message = message or self.message
         self.code = code or self.code
         self.details = details or []
+        self.headers = headers or {}
         super().__init__(self.message)
 
 
@@ -69,6 +71,15 @@ class AuthenticationError(AppError):
     message = "Authentication required."
 
 
+class RateLimitedError(AppError):
+    status_code = HTTPStatus.TOO_MANY_REQUESTS
+    code = "RATE_LIMITED"
+    message = "Too many attempts. Please wait and try again."
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__(headers={"Retry-After": str(max(1, retry_after_seconds))})
+
+
 _HTTP_STATUS_CODES: dict[int, str] = {
     400: "BAD_REQUEST",
     401: "UNAUTHENTICATED",
@@ -86,6 +97,29 @@ def _request_id(request: Request) -> str | None:
     return getattr(request.state, "request_id", None)
 
 
+def envelope_response(
+    *,
+    status_code: int,
+    code: str,
+    message: str,
+    request_id: str | None,
+    details: list[dict[str, Any]] | None = None,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    """The standard error envelope; also usable directly as an ASGI app in middleware."""
+    response_headers = dict(headers or {})
+    if request_id:
+        response_headers[REQUEST_ID_HEADER] = request_id
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error": {"code": code, "message": message, "details": details or []},
+            "meta": {"request_id": request_id},
+        },
+        headers=response_headers,
+    )
+
+
 def error_response(
     request: Request,
     *,
@@ -95,18 +129,13 @@ def error_response(
     details: list[dict[str, Any]] | None = None,
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
-    request_id = _request_id(request)
-    response_headers = dict(headers or {})
-    if request_id:
-        # Set explicitly: the 500 handler runs outside our middleware.
-        response_headers[REQUEST_ID_HEADER] = request_id
-    return JSONResponse(
+    return envelope_response(
         status_code=status_code,
-        content={
-            "error": {"code": code, "message": message, "details": details or []},
-            "meta": {"request_id": request_id},
-        },
-        headers=response_headers,
+        code=code,
+        message=message,
+        request_id=_request_id(request),
+        details=details,
+        headers=headers,
     )
 
 
@@ -119,6 +148,7 @@ async def _app_error_handler(request: Request, exc: Exception) -> JSONResponse:
         code=exc.code,
         message=exc.message,
         details=exc.details,
+        headers=exc.headers,
     )
 
 
@@ -166,6 +196,8 @@ async def _http_error_handler(request: Request, exc: Exception) -> JSONResponse:
 
 
 async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    # Fallback only: CatchAllErrorsMiddleware normally handles these first, inside
+    # CORS. This runs if an exception escapes the outermost middleware.
     logger.error(
         "unhandled_exception",
         exc_info=exc,

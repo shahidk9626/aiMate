@@ -34,7 +34,6 @@ Decisions D1–D10 from the Day 1 review were approved on 2026-11-12 (see "Resol
 - Python and Node dependency versions in `SETUP_GUIDE.md` were looked up, not installed; compatibility is confirmed as each step installs and tests them.
 - Development environment only: anonymous pulls from Docker Hub were rate-limited (HTTP 429) in the cloud development container on 2026-11-12. The PostgreSQL image was pulled from Google's Docker Hub mirror (`mirror.gcr.io/library/postgres:17-alpine`, same official image) and tagged locally. This does not affect a developer machine or the VPS. If it recurs on a server, log in to Docker Hub or use the mirror.
 
-- The API has no security headers, rate limiting or body-size limit yet. These arrive with the first endpoints that need them (Stage 2 auth) and are tracked there, not forgotten. (CORS was added in Stage 1 step 4.)
 - Development environment only: the cloud container sets a deprecated `UV_NATIVE_TLS` variable, so `uv` prints a warning. Harmless; unrelated to the project.
 
 - Local docker only: the official PostgreSQL image makes `POSTGRES_USER` (`leadflow_owner`) a superuser. Superusers bypass RLS, which is why the app never connects as it. In production the owner must be a plain database owner, not a superuser — to be enforced in the deployment checklist (Stage 9).
@@ -43,7 +42,9 @@ Decisions D1–D10 from the Day 1 review were approved on 2026-11-12 (see "Resol
 - RLS scopes rows to the tenant id set for the transaction but does not itself verify the user's membership of that tenant (ADR-023, "Known limit"). Only the `tenant_context` dependency (step 2.4) and the token-validated signup and invitation flows may set it; code review must keep it that way.
 - Downgrading migration `0002` keeps the `<app role>_lookup` role (like the app role), because roles are cluster-wide and may be used by another database.
 
-- Unhandled 500 errors are produced by Starlette's outermost error middleware, which sits outside CORS, so a browser sees them as `NETWORK_ERROR` rather than `INTERNAL_ERROR` (the response itself and the log are correct). Fix with a catch-all middleware inside CORS when the first real endpoints land (Stage 2).
+- Rate limiting fails open when Redis is unreachable (logged as `rate_limit_unavailable`). Deliberate: failing closed would lock every user out during a Redis outage. Alert on that log event once monitoring exists (Stage 9).
+- The web app's API client does not yet send `X-Requested-With: leadflow` on writes (it only makes GET requests so far); it must when the Stage 2 forms are built (step 2.6), or the API will answer `403 CSRF_REJECTED`.
+- `TRUSTED_PROXY=cloudflare` must only be set when the API is reachable exclusively through Cloudflare (firewall the VPS to Cloudflare's IP ranges); otherwise clients could forge their IP in rate limits and audit logs.
 - `WEB_ORIGIN` holds one origin. The website widget (Stage 5) is embedded on customer sites with their own origins and will use its own per-channel allowlist (`channels.allowed_origins`), not this setting.
 - ESLint 9 is reported as deprecated by npm. We stay on 9 because `eslint-config-next` 16.4.6's plugins do not yet declare ESLint 10 support (ADR-021). Dev-only; not shipped.
 - `NEXT_PUBLIC_API_URL` is fixed at build time; the same web build cannot be promoted between environments with different API URLs.
