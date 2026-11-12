@@ -1,6 +1,6 @@
 # API Contracts
 
-**Status: health probe and error envelope implemented (Stage 1, step 2); everything else PROPOSED.** Each endpoint is marked Implemented with its request/response schema when it ships. The generated OpenAPI document (`/api/v1/openapi.json`) becomes the machine-readable contract; TypeScript types in `packages/contracts` are generated from it.
+**Status: health/readiness probes and error envelope implemented (Stage 1, steps 2–3); everything else PROPOSED.** Each endpoint is marked Implemented with its request/response schema when it ships. The generated OpenAPI document (`/api/v1/openapi.json`) becomes the machine-readable contract; TypeScript types in `packages/contracts` are generated from it.
 
 ## Conventions
 
@@ -43,7 +43,7 @@ Health probes are mounted at the root, outside `/api/v1`: they are infrastructur
 | Method + path | Purpose | Access | Status |
 |---|---|---|---|
 | `GET /healthz` | Liveness; no dependency checks. `200 {"status":"ok"}` | Public | **Implemented** |
-| `GET /readyz` | DB + Redis reachable | Public | Step 3 |
+| `GET /readyz` | PostgreSQL + Redis answer within `READINESS_TIMEOUT_SECONDS` (default 2 s, checked concurrently). `200 {"status":"ok","checks":{"database":"ok","redis":"ok"}}`, or `503` with `"status":"unavailable"` and the failing check(s) marked `"unavailable"`. Reasons are logged, never returned | Public | **Implemented** |
 | `GET /api/v1/openapi.json`, `GET /api/v1/docs` | OpenAPI schema, Swagger UI | Public, **disabled in production** | **Implemented** |
 
 ## Stage 2 — Auth and tenancy

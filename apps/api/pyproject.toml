@@ -9,6 +9,10 @@ dependencies = [
     "uvicorn[standard]>=0.54,<0.55",
     "pydantic-settings>=2.16,<3",
     "structlog>=26.1,<27",
+    "sqlalchemy[asyncio]>=2.1,<2.2",
+    "psycopg[binary]>=3.3,<3.4",
+    "alembic>=1.20,<2",
+    "redis>=8.1,<9",
 ]
 
 [dependency-groups]
@@ -26,6 +30,9 @@ package = false
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config"
 filterwarnings = ["error"]
+markers = [
+    "integration: needs the local PostgreSQL/Redis from infra/docker-compose.yml (auto-applied to tests/integration)",
+]
 
 [tool.ruff]
 target-version = "py313"
@@ -43,9 +50,17 @@ select = [
     "ASYNC",
 ]
 
+[tool.ruff.lint.isort]
+# The local alembic/ migrations folder is not the alembic package.
+known-third-party = ["alembic"]
+
 [tool.ruff.lint.per-file-ignores]
-# assert is the point of a test; fake secrets are deliberate test inputs
-"tests/**" = ["S101", "S105", "S106"]
+# assert is the point of a test; fake secrets are deliberate test inputs;
+# test SQL interpolates constant table names only.
+"tests/**" = ["S101", "S105", "S106", "S608"]
+# Migrations embed role/table names in DDL (which cannot take bound parameters).
+# Every such name is validated by Settings or app.db.rls against ^[a-z_][a-z0-9_]*$.
+"alembic/versions/**" = ["S608"]
 
 [tool.mypy]
 python_version = "3.13"

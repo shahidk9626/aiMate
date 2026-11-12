@@ -129,6 +129,18 @@ Channel tokens stored as ciphertext using envelope encryption: per-record data k
 ### ADR-019 `httpx2` for the test client — Accepted (2026-11-12)
 Starlette 1.10 (pulled in by FastAPI 0.162) deprecates `httpx` for `TestClient` and emits a warning on import; our pytest config turns warnings into errors. Starlette's docs require `httpx2`, the successor to httpx by the same author, maintained under the Pydantic organisation. It is a **dev-only** dependency for now. The outbound HTTP client for Meta/OpenAI is chosen in the stage that needs it.
 
+### ADR-020 Database layer implementation — Accepted (2026-11-12)
+- **Two roles.** Owner (`POSTGRES_USER`) runs Alembic and bootstrap only. Runtime role (`APP_DB_USER`, default `leadflow_app`) is `NOSUPERUSER NOBYPASSRLS`, no DDL; gets DML through `ALTER DEFAULT PRIVILEGES` in the baseline, so table migrations need no GRANTs. Staging/production API and worker containers receive only the runtime credentials.
+- **Role bootstrap as an idempotent command** (`python -m app.db.bootstrap`) rather than a docker `initdb` script: initdb scripts run only on an empty volume and do not exist on managed/VPS databases; the command works everywhere and also rotates the password.
+- **Settings from components, not URLs.** `POSTGRES_HOST/PORT/DB`, owner and app credentials, Redis host/port/db/password. URLs are built with `sqlalchemy.engine.URL.create`, which escapes special characters; no password duplicated across variables. The root `.env` is shared by compose and the API. Staging/production refuse to start without `APP_DB_PASSWORD` and `REDIS_PASSWORD`.
+- **Tenant context** via `set_config('app.tenant_id', :id, true)` with a bound parameter; `set_tenant` accepts only `uuid.UUID`. RLS policy uses `NULLIF(…, '')` so an emptied setting fails closed instead of raising a cast error.
+- **One session, one transaction per request** (`DbSession` dependency): commit on success, rollback on exception. `expire_on_commit=False` for async safety.
+- **Engines created eagerly, connected lazily**; disposed (with the Redis client) on shutdown via lifespan.
+- **UUIDv7** implemented in-house (`app/db/ids.py`, ~15 lines, tested) because `uuid.uuid7` arrives in Python 3.14. Replace with the stdlib when we move to 3.14.
+- **Async test support from `anyio`'s pytest plugin** (already installed with Starlette) instead of adding `pytest-asyncio`.
+- **SQLAlchemy 2.1 needs the `asyncio` extra** for greenlet; it is no longer installed by default.
+- **Integration tests** use a disposable `leadflow_test` database and `leadflow_app_test` role, Redis db 15, and skip cleanly when PostgreSQL is not running.
+
 ### Deferred
 - Vector store for knowledge retrieval (pgvector in the same Postgres is the default candidate) — Stage 6.
 - Billing provider (Stripe for US/UK, Razorpay for India are the candidates) — Stage 9.

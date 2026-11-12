@@ -37,6 +37,11 @@ None open. Decisions D1–D10 from the Day 1 review were approved on 2026-11-12 
 - The API has no CORS, security headers, rate limiting or body-size limit yet. These arrive with the first endpoints that need them (Stage 2 auth) and are tracked there, not forgotten.
 - Development environment only: the cloud container sets a deprecated `UV_NATIVE_TLS` variable, so `uv` prints a warning. Harmless; unrelated to the project.
 
+- Local docker only: the official PostgreSQL image makes `POSTGRES_USER` (`leadflow_owner`) a superuser. Superusers bypass RLS, which is why the app never connects as it. In production the owner must be a plain database owner, not a superuser — to be enforced in the deployment checklist (Stage 9).
+- The role bootstrap sends the app password as an escaped SQL literal (DDL cannot take parameters). Do not run it while `log_statement = 'all'` is enabled on the server.
+- `alembic upgrade head` runs migrations but does not run the bootstrap; on a brand-new environment run bootstrap first (the migration tolerates either order by creating the role `NOLOGIN` if missing).
+- No tenant-owned tables exist yet, so RLS is proven on a test probe table only. Stage 2 must add `enable_tenant_rls_sql` to every tenant table migration and extend the isolation tests to real tables.
+
 ## Bugs
 
 None.

@@ -1,6 +1,30 @@
 # Database Schema
 
-**Status: PROPOSED (v1.1 draft). Nothing is migrated yet.** Based on LLD v1.0 §3 with the corrections in `ARCHITECTURE_DECISIONS.md` Part 1. Once a table is migrated, this file records the real state and the Alembic revision.
+**Status: baseline revision `0001` applied (no tables yet). Tables below are PROPOSED (v1.1, approved design).** Based on LLD v1.0 §3 with the corrections in `ARCHITECTURE_DECISIONS.md` Part 1. Once a table is migrated, this file records the real state and the Alembic revision.
+
+## Applied migrations
+
+| Revision | File | Content |
+|---|---|---|
+| `0001` | `apps/api/alembic/versions/0001_baseline.py` | `citext` extension; `REVOKE CREATE ON SCHEMA public FROM PUBLIC`; app role `USAGE` on `public`; default privileges so the app role gets `SELECT, INSERT, UPDATE, DELETE` on every future table and `USAGE, SELECT` on sequences. Creates the app role `NOLOGIN` if bootstrap has not run yet. |
+
+## Database roles (ADR-020)
+
+| Role | Purpose | Attributes | Privileges |
+|---|---|---|---|
+| `leadflow_owner` (`POSTGRES_USER`) | Owns schema; runs Alembic and bootstrap | Local docker: superuser (image default). Production: database owner, **not** superuser | All |
+| `leadflow_app` (`APP_DB_USER`) | API and worker at runtime | `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS` | DML on tables via default privileges; no DDL; cannot read `alembic_version` |
+| `leadflow_app_test` | Integration tests only, dropped after the run | Same as app role | Same |
+
+Created/updated by `uv run python -m app.db.bootstrap` (idempotent; also run after changing `APP_DB_PASSWORD`).
+
+## Migration conventions
+
+- Revision ids are sequential 4-digit numbers: `uv run alembic revision --autogenerate --rev-id 0002 -m "create identity tables"`.
+- One transaction per migration file.
+- Every tenant-owned table's migration calls `enable_tenant_rls_sql(table)` from `app.db.rls` in `upgrade()` and `disable_tenant_rls_sql(table)` in `downgrade()`.
+- `downgrade()` is written and tested for every revision (the test suite runs base → head → base → head).
+- A test fails if models and migrations drift apart (`compare_metadata` must be empty).
 
 ## Conventions
 
@@ -174,12 +198,18 @@ Index: partial `(available_at) WHERE status = 'pending'`.
 
 ## Row Level Security template
 
+Implemented in `apps/api/app/db/rls.py` (single source for migrations and tests):
+
 ```sql
 ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
 ALTER TABLE <t> FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON <t>
-  USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+  USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+  WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 ```
 
-With the setting unset the comparison is NULL, so the policy fails closed (no rows).
+With the setting unset (or reset to an empty string) the comparison is NULL, so the policy fails closed: no rows visible, no rows writable.
+
+The setting is applied per transaction by `app.db.tenant.set_tenant(session, tenant_id)` → `SELECT set_config('app.tenant_id', :id, true)` (bound parameter; transaction-local, so pooled connections never carry a tenant forward).
+
+Verified by `tests/integration/test_tenant_isolation.py`: tenants see only their rows; no context sees nothing and cannot insert; cannot insert, move or modify rows of another tenant; context does not survive commit on the same pooled connection; async and sync sessions both enforce it.

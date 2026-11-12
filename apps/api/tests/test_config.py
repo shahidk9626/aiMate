@@ -1,12 +1,15 @@
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from app.core.config import Environment, Settings
 from app.main import create_app
 
 
 def _settings(**overrides: object) -> Settings:
+    # Staging/production require these secrets (see test_db_config.py).
+    overrides.setdefault("app_db_password", SecretStr("test-only"))
+    overrides.setdefault("redis_password", SecretStr("test-only"))
     return Settings(_env_file=None, **overrides)  # type: ignore[arg-type]
 
 

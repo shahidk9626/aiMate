@@ -3,8 +3,8 @@
 ## Current state
 
 **Milestone:** Stage 1 — Foundation
-**Status:** Steps 1–2 of 5 complete. Branch `stage-1/foundation`.
-**Next:** Stage 1, step 3 — database layer (see below).
+**Status:** Steps 1–3 of 5 complete. Branch `stage-1/foundation`.
+**Next:** Stage 1, step 4 — Next.js web app scaffold (see below).
 
 ## Completed
 
@@ -71,19 +71,44 @@ Results:
 
 What the tests cover: liveness; request-id generation, propagation and rejection of unsafe values; request id on 404/500; envelope for app errors, validation (no input echo), 404, 405, 500 (no internals leaked); settings defaults/env/invalid values/immutability; docs hidden in production; access log without query string; redaction; unhandled exceptions logged with request id.
 
+### Stage 1, step 3 — Database layer (2026-11-12)
+
+Dependencies added (runtime): `sqlalchemy[asyncio]` 2.1.8, `psycopg[binary]` 3.3.9, `alembic` 1.20.1, `redis` 8.1.0. `pytest-asyncio` was **not** added: anyio's pytest plugin (already present) runs async tests.
+
+Files created in `apps/api/`:
+- `app/db/base.py` (Base, naming conventions, UUID PK + timestamp mixins), `ids.py` (UUIDv7), `engine.py` (async + sync engines), `session.py` (`DbSession` dependency), `tenant.py` (`set_tenant` / `set_tenant_sync`), `rls.py` (policy SQL), `models.py` (registry), `bootstrap.py` (runtime role command).
+- `app/core/redis.py` — async Redis client factory.
+- `alembic.ini`, `alembic/env.py`, `alembic/script.py.mako`, `alembic/versions/0001_baseline.py`.
+- Tests: `test_ids.py`, `test_rls_sql.py`, `test_db_config.py`, `test_readyz.py`, `tests/integration/{conftest,test_migrations,test_app_role,test_tenant_isolation,test_app_live}.py`.
+
+Files modified: `app/core/config.py` (database/Redis settings, secrets required in staging/production), `app/api/health.py` (`/readyz`), `app/main.py` (engine/Redis lifecycle), `pyproject.toml`, `uv.lock`, `tests/test_config.py` (supply secrets for production settings), `.env.example`, `apps/api/README.md`.
+
+Docs updated: `ARCHITECTURE_DECISIONS.md` (ADR-020), `DATABASE_SCHEMA.md` (revision 0001, roles, conventions, RLS verified), `API_CONTRACTS.md` (`/readyz`), `SETUP_GUIDE.md` (bootstrap, migrations, test commands, consolidated env vars), `KNOWN_ISSUES.md`, this file.
+
+Results:
+| Check | Result |
+|---|---|
+| `pytest` (all) | **74 passed** (3.4 s): 54 unit + 20 integration |
+| Integration tests with PostgreSQL stopped | Skipped with reason, not failed |
+| Test database/role cleaned up after run | Yes |
+| `ruff check`, `ruff format --check`, strict `mypy` | Clean (38 files) |
+| `python -m app.db.bootstrap` on dev DB | Created role; second run updated (idempotent) |
+| `alembic upgrade head` on dev DB | At `0001 (head)` |
+| `/readyz` live, Redis stopped, Redis restarted | 200 → 503 (`redis: unavailable`) → 200 |
+
+What the integration tests prove: app role is not superuser/BYPASSRLS, cannot create tables or read `alembic_version`; app connects as that role; migrations go base → head → base → head; models and migrations are in sync; with the shipped RLS policy a tenant sees only its rows, no tenant context sees and inserts nothing, rows cannot be inserted for, moved to, or modified in another tenant, and tenant context does not survive a commit on the same pooled connection (sync and async).
+
 ## Exact next task
 
-**Stage 1, step 3 — database layer** in `apps/api`:
-1. New runtime deps (explained at the time): `sqlalchemy` 2.1, `psycopg[binary]` 3.3, `alembic` 1.20, `redis` 8.1; dev: `pytest-asyncio`.
-2. Settings: `DATABASE_URL` (app role), `DATABASE_MIGRATION_URL` (owner role), `REDIS_URL` as `SecretStr`-backed values.
-3. Database roles: owner (migrations) vs `leadflow_app` (runtime, no `BYPASSRLS`, no DDL), created by the baseline migration; docker init or documented bootstrap for the app role password.
-4. `app/db/`: async engine + session dependency, sync engine for workers, declarative `Base` with naming conventions, UUIDv7 + timestamp mixins, `tenant_session()` that runs `SET LOCAL app.tenant_id`.
-5. Alembic configured for the owner URL; baseline migration enables `citext`, creates roles and grants.
-6. `GET /readyz` checking DB and Redis with short timeouts.
-7. Integration tests against the compose PostgreSQL/Redis (skipped with a clear message if unavailable); stop and report.
+**Stage 1, step 4 — Next.js web app scaffold** in `apps/web`:
+1. Verify current Next.js / React / Tailwind / TypeScript compatibility; scaffold with `create-next-app` (App Router, TypeScript, Tailwind, ESLint, `src/` dir) using pnpm; Node 22.
+2. Root `package.json` + `pnpm-workspace.yaml` for `apps/web` (and later `apps/widget`, `packages/contracts`).
+3. Typed API client module reading `NEXT_PUBLIC_API_URL`; a status page that shows `/healthz` and `/readyz` results.
+4. API CORS for the web origin (`WEB_ORIGIN`), restricted to that origin only.
+5. Frontend test setup (Vitest + Testing Library) with a first test; lint, type-check, build.
+6. Update docs; stop and report.
 
 Remaining Stage 1 steps:
-- Step 4: Next.js + TypeScript + Tailwind scaffold with a page that calls the health endpoint.
 - Step 5: API/web Dockerfiles, full `docker compose up`, HLD/LLD v1.1, Stage 1 sign-off.
 
 ## Stage tracker
@@ -91,7 +116,7 @@ Remaining Stage 1 steps:
 | Stage | Scope | Status |
 |---|---|---|
 | 0 | Architecture review | Done, approved |
-| 1 | Foundation | In progress — steps 1–2 of 5 done |
+| 1 | Foundation | In progress — steps 1–3 of 5 done |
 | 2 | Auth + multi-tenancy | Not started |
 | 3 | CRM | Not started |
 | 4 | Unified inbox | Not started |
