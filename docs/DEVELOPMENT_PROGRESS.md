@@ -3,8 +3,8 @@
 ## Current state
 
 **Milestone:** Stage 1 — Foundation
-**Status:** Steps 1–3 of 5 complete. Branch `stage-1/foundation`.
-**Next:** Stage 1, step 4 — Next.js web app scaffold (see below).
+**Status:** Steps 1–4 of 5 complete. Branch `stage-1/foundation`.
+**Next:** Stage 1, step 5 — Docker images, one-command local stack, HLD/LLD v1.1, Stage 1 sign-off (see below).
 
 ## Completed
 
@@ -98,25 +98,51 @@ Results:
 
 What the integration tests prove: app role is not superuser/BYPASSRLS, cannot create tables or read `alembic_version`; app connects as that role; migrations go base → head → base → head; models and migrations are in sync; with the shipped RLS policy a tenant sees only its rows, no tenant context sees and inserts nothing, rows cannot be inserted for, moved to, or modified in another tenant, and tenant context does not survive a commit on the same pooled connection (sync and async).
 
+### Stage 1, step 4 — Web app foundation (2026-11-12)
+
+Scaffolded with `create-next-app@16.4.6`; every generated file was read before changes. Bundled Next.js 16 docs consulted for Cache Components, Partial Prefetching, environment variables, TypeScript typegen and Vitest.
+
+Files created / changed:
+- Repo root: `package.json` (workspace scripts, pnpm 10.28 pinned, Node ≥ 22.12), `pnpm-workspace.yaml`, `pnpm-lock.yaml`; `.env.example` (+ `WEB_ORIGIN`); `README.md` (quick start for the whole stack).
+- `apps/web/` (`@leadflow/web`): scaffold config (`next.config.ts`, `tsconfig.json`, `eslint.config.mjs`, `AGENTS.md`, `.gitignore` + `!.env.example`), `.env.example`, `README.md`, `vitest.config.mts`, `vitest.setup.ts`.
+- `src/app/layout.tsx` (title, `noindex`, font fix), `globals.css`, `page.tsx` (honest preview landing), `status/page.tsx`.
+- `src/components/system-status.tsx`; `src/lib/config.ts`, `src/lib/api/client.ts`, `src/lib/api/health.ts`, `src/lib/system-status.ts`; `src/test/fetch-mock.ts`.
+- Tests: `config.test.ts`, `api/client.test.ts`, `system-status.test.tsx`, `app/page.test.tsx`.
+- Scaffold demo images in `public/` removed.
+- API: `app/core/config.py` (`WEB_ORIGIN` with validation), `app/main.py` (CORS middleware), `tests/test_cors.py` (new), `tests/test_config.py` and `tests/test_db_config.py` (supply an https origin for production settings).
+
+Docs updated: `ARCHITECTURE_DECISIONS.md` (ADR-021), `API_CONTRACTS.md` (CORS), `SETUP_GUIDE.md` (web setup, versions, env vars), `KNOWN_ISSUES.md`, this file.
+
+Problems found and resolved:
+- React lint rule `set-state-in-effect` flagged the first polling implementation; rewritten to the recommended pattern.
+- ESLint 10 tried: its plugins in `eslint-config-next` do not support it yet; stayed on 9.
+- Scaffold CSS forced Arial over the loaded Geist font; fixed.
+
+Results:
+| Check | Result |
+|---|---|
+| Web `pnpm check` (ESLint, `next typegen` + `tsc`, Vitest) | Clean; **16 tests passed** |
+| `next build` with `NEXT_PUBLIC_API_URL` | Success; `/`, `/status` prerendered |
+| `next build` without it | Fails with a clear message (intended) |
+| API `pytest` | **91 passed** (71 unit + 20 integration), ruff + strict mypy clean |
+| Real browser (Chromium via Playwright), `next start` + API | All three services "Operational"; with Redis stopped only "Queue & cache" shows "Unavailable"; from untrusted origin `127.0.0.1:3000` the browser blocks the request (CORS) and the page explains it |
+
 ## Exact next task
 
-**Stage 1, step 4 — Next.js web app scaffold** in `apps/web`:
-1. Verify current Next.js / React / Tailwind / TypeScript compatibility; scaffold with `create-next-app` (App Router, TypeScript, Tailwind, ESLint, `src/` dir) using pnpm; Node 22.
-2. Root `package.json` + `pnpm-workspace.yaml` for `apps/web` (and later `apps/widget`, `packages/contracts`).
-3. Typed API client module reading `NEXT_PUBLIC_API_URL`; a status page that shows `/healthz` and `/readyz` results.
-4. API CORS for the web origin (`WEB_ORIGIN`), restricted to that origin only.
-5. Frontend test setup (Vitest + Testing Library) with a first test; lint, type-check, build.
-6. Update docs; stop and report.
-
-Remaining Stage 1 steps:
-- Step 5: API/web Dockerfiles, full `docker compose up`, HLD/LLD v1.1, Stage 1 sign-off.
+**Stage 1, step 5 — Containerised local stack and Stage 1 sign-off:**
+1. `apps/api/Dockerfile` (multi-stage, uv, non-root user, no owner DB credentials in the runtime image) and `apps/web/Dockerfile` (Next.js standalone output, non-root, `NEXT_PUBLIC_API_URL` as build arg).
+2. Add `api`, `web` and a one-off `migrate` service (bootstrap + `alembic upgrade head`) to `infra/docker-compose.yml`, with health checks wired to `/healthz` and `/readyz`.
+3. Verify `docker compose up` brings up the whole stack from a clean checkout; the status page shows all services operational.
+4. Quieten `/healthz` and `/readyz` in the access log.
+5. Revise `docs/AI-LeadFlow-HLD.html` and `AI-LeadFlow-LLD.html` to v1.1 with the approved corrections.
+6. Stage 1 review: update all docs, list what Stage 2 starts with, stop and report.
 
 ## Stage tracker
 
 | Stage | Scope | Status |
 |---|---|---|
 | 0 | Architecture review | Done, approved |
-| 1 | Foundation | In progress — steps 1–3 of 5 done |
+| 1 | Foundation | In progress — steps 1–4 of 5 done |
 | 2 | Auth + multi-tenancy | Not started |
 | 3 | CRM | Not started |
 | 4 | Unified inbox | Not started |

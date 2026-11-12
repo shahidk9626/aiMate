@@ -1,6 +1,6 @@
 # Setup Guide
 
-**Status: local PostgreSQL, Redis, the API, the database role bootstrap and migrations are runnable (Stage 1, steps 1–3).** The web app does not exist yet. Commands are added here as each piece is built and verified; this file must never describe a step that has not been run successfully.
+**Status: local PostgreSQL, Redis, the API (with role bootstrap and migrations) and the web app are runnable (Stage 1, steps 1–4).** Everything runs from your machine; the all-in-Docker setup comes in step 5. Commands are added here as each piece is built and verified; this file must never describe a step that has not been run successfully.
 
 ## Required tooling (planned)
 
@@ -8,8 +8,8 @@
 |---|---|---|
 | Python | 3.13 | API and worker |
 | uv | latest | Python dependencies and lockfile |
-| Node.js | 22 LTS | Web app and widget |
-| pnpm | latest | JS workspaces |
+| Node.js | 22.12+ | Web app and widget (Vitest 5 / jsdom 31 need ≥ 22.12) |
+| pnpm | 10.x (pinned in root `package.json`) | JS workspaces; enable with `corepack enable` |
 | Docker + Compose | current | PostgreSQL, Redis, full local stack |
 | PostgreSQL | 17 (container) | Database |
 | Redis | 7+ (container) | Celery broker, pub/sub, rate limits |
@@ -40,7 +40,7 @@ Backend dev: pytest 9.x, httpx2 2.16.x (Starlette TestClient, ADR-019), ruff 0.1
 
 **Installed and locked** (`apps/api/uv.lock`): fastapi 0.162.5, starlette 1.10.0, uvicorn 0.54.0, pydantic 2.14.3, pydantic-settings 2.16.2, structlog 26.1.0, sqlalchemy 2.1.8 (`asyncio` extra → greenlet 3.5.6), psycopg 3.3.9 (binary), alembic 1.20.1, redis 8.1.0, pytest 9.2.0 (+ anyio plugin for async tests), httpx2 2.16.0, ruff 0.17.4, mypy 2.4.1. Data services: PostgreSQL 17.11, Redis 8.10.
 
-Frontend: Next.js 16.x, React 19.x, Tailwind CSS 4.x, TypeScript (version as pinned by the Next.js scaffold — TypeScript 7.0 is very new and is adopted only if the Next.js toolchain supports it).
+Frontend, **installed and locked** (`pnpm-lock.yaml`): next 16.4.6, react / react-dom 19.3.0, tailwindcss 4.3.3 (+ `@tailwindcss/turbopack`), typescript 5.x, eslint 9.39 + eslint-config-next 16.4.6; tests: vitest 5.1.0, @vitejs/plugin-react 6.3.0, jsdom 31.0.0, @testing-library/react 16.3.3, @testing-library/dom 10.4.2, @testing-library/jest-dom 7.0.1. TypeScript 7 and ESLint 10 are not used: the Next.js scaffold pins 5 and 9 (ADR-021).
 
 ## Environment variables in use now
 
@@ -58,6 +58,9 @@ One root `.env` (copied from `.env.example`) serves docker compose and the API. 
 | `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | `5` / `5` | Per process |
 | `DB_CONNECT_TIMEOUT_SECONDS` | `5` | |
 | `READINESS_TIMEOUT_SECONDS` | `2` | Per `/readyz` check |
+| `WEB_ORIGIN` | `http://localhost:3000` | The single browser origin allowed by CORS. Must be a public `https` origin in staging/production |
+
+Web app (`apps/web/.env.local`, see `apps/web/.env.example`): `NEXT_PUBLIC_API_URL`, default `http://localhost:8000` in development, **required** for production builds and baked in at build time. Only non-secret values may use `NEXT_PUBLIC_`.
 
 Compose uses `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `REDIS_PASSWORD`, `REDIS_PORT`.
 
@@ -67,11 +70,10 @@ Compose uses `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT
 |---|---|---|
 | `JWT_SECRET` | api | Secret. Stage 2 |
 | `CREDENTIALS_MASTER_KEY`, `CREDENTIALS_KEY_VERSION` | api, worker | Secret; channel token encryption |
-| `WEB_ORIGIN`, `COOKIE_DOMAIN` | api | CORS/CSRF and cookies. Stage 2 |
+| `COOKIE_DOMAIN` | api | Session cookies. Stage 2 |
 | `EMAIL_*` | api, worker | Stage 2; provider pending |
 | `OPENAI_API_KEY`, `LLM_MODEL` | worker | Stage 6 |
 | `META_APP_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN` | api, worker | Stage 7 |
-| `NEXT_PUBLIC_API_URL` | web | Only non-secret values may be `NEXT_PUBLIC_` |
 
 Secrets live in untracked `.env` files locally and in the host's secret store in production. `.env` is git-ignored; `.env.example` holds names and safe placeholders only.
 
@@ -192,6 +194,44 @@ uv run mypy
 
 All environment variables are listed in "Environment variables in use now" above.
 
-### 5. Worker and web
+### 5. Web app (verified 2026-11-12)
 
-To be written as each is built (Stage 1, steps 4–5 and Stage 2+).
+Prerequisites: Node.js 22.12 or newer, and pnpm. pnpm ships with Node through corepack:
+
+```bash
+corepack enable
+```
+
+Install the JavaScript dependencies (from the repository root):
+
+```bash
+pnpm install
+```
+
+Optional: copy `apps/web/.env.example` to `apps/web/.env.local`. Without it the app uses `http://localhost:8000` as the API address in development.
+
+Start the dev server (from the repository root), with the API from section 2 running:
+
+```bash
+pnpm dev:web
+```
+
+Open **http://localhost:3000** and click "View system status". All three services should show "Operational".
+
+Use `localhost`, not `127.0.0.1`: the API only accepts browser requests from `WEB_ORIGIN` (default `http://localhost:3000`). From any other address the status page shows "Could not reach the server" and the browser console shows a CORS error. That is the protection working.
+
+Web checks (from `apps/web`): lint, type check and unit tests in one command:
+
+```bash
+pnpm check
+```
+
+Production build (the API URL is baked into the build):
+
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm build
+```
+
+### 6. Worker
+
+To be written in Stage 2+ when the first background job exists.

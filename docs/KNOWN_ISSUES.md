@@ -34,13 +34,19 @@ None open. Decisions D1–D10 from the Day 1 review were approved on 2026-11-12 
 - Development environment only: anonymous pulls from Docker Hub were rate-limited (HTTP 429) in the cloud development container on 2026-11-12. The PostgreSQL image was pulled from Google's Docker Hub mirror (`mirror.gcr.io/library/postgres:17-alpine`, same official image) and tagged locally. This does not affect a developer machine or the VPS. If it recurs on a server, log in to Docker Hub or use the mirror.
 
 - `/healthz` requests are written to the access log. Fine locally; once uptime monitors poll it every few seconds this becomes noise. Revisit (sample or skip health paths) at Stage 1 step 5 / deployment.
-- The API has no CORS, security headers, rate limiting or body-size limit yet. These arrive with the first endpoints that need them (Stage 2 auth) and are tracked there, not forgotten.
+- The API has no security headers, rate limiting or body-size limit yet. These arrive with the first endpoints that need them (Stage 2 auth) and are tracked there, not forgotten. (CORS was added in Stage 1 step 4.)
 - Development environment only: the cloud container sets a deprecated `UV_NATIVE_TLS` variable, so `uv` prints a warning. Harmless; unrelated to the project.
 
 - Local docker only: the official PostgreSQL image makes `POSTGRES_USER` (`leadflow_owner`) a superuser. Superusers bypass RLS, which is why the app never connects as it. In production the owner must be a plain database owner, not a superuser — to be enforced in the deployment checklist (Stage 9).
 - The role bootstrap sends the app password as an escaped SQL literal (DDL cannot take parameters). Do not run it while `log_statement = 'all'` is enabled on the server.
 - `alembic upgrade head` runs migrations but does not run the bootstrap; on a brand-new environment run bootstrap first (the migration tolerates either order by creating the role `NOLOGIN` if missing).
 - No tenant-owned tables exist yet, so RLS is proven on a test probe table only. Stage 2 must add `enable_tenant_rls_sql` to every tenant table migration and extend the isolation tests to real tables.
+
+- Unhandled 500 errors are produced by Starlette's outermost error middleware, which sits outside CORS, so a browser sees them as `NETWORK_ERROR` rather than `INTERNAL_ERROR` (the response itself and the log are correct). Fix with a catch-all middleware inside CORS when the first real endpoints land (Stage 2).
+- `WEB_ORIGIN` holds one origin. The website widget (Stage 5) is embedded on customer sites with their own origins and will use its own per-channel allowlist (`channels.allowed_origins`), not this setting.
+- ESLint 9 is reported as deprecated by npm. We stay on 9 because `eslint-config-next` 16.4.6's plugins do not yet declare ESLint 10 support (ADR-021). Dev-only; not shipped.
+- `NEXT_PUBLIC_API_URL` is fixed at build time; the same web build cannot be promoted between environments with different API URLs.
+- `next dev` regenerates `apps/web/AGENTS.md` (Next.js agent notes). It is committed so the working tree stays clean.
 
 ## Bugs
 

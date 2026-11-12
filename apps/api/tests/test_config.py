@@ -10,6 +10,7 @@ def _settings(**overrides: object) -> Settings:
     # Staging/production require these secrets (see test_db_config.py).
     overrides.setdefault("app_db_password", SecretStr("test-only"))
     overrides.setdefault("redis_password", SecretStr("test-only"))
+    overrides.setdefault("web_origin", "https://app.example.com")
     return Settings(_env_file=None, **overrides)  # type: ignore[arg-type]
 
 

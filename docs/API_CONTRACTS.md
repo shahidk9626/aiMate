@@ -8,6 +8,7 @@
 - Auth: HttpOnly cookies (access + refresh). State-changing requests need header `X-Requested-With: leadflow` and a trusted `Origin`.
 - Tenant: header `X-Tenant-ID: <uuid>` on every tenant-scoped route; verified against membership. Request bodies never contain `tenant_id`.
 - Every response carries `X-Request-ID`.
+- CORS (implemented, Stage 1 step 4): browsers may call the API only from `WEB_ORIGIN` (one origin). Credentials allowed. Methods `GET, POST, PUT, PATCH, DELETE`. Request headers `Content-Type, X-Requested-With, X-Tenant-ID, Idempotency-Key, X-Request-ID`. Exposed: `X-Request-ID`. Preflight cached 10 minutes. Untrusted origins get no CORS headers (preflight `400`).
 - Pagination: cursor based — `?limit=50&cursor=<opaque>`.
 - Roles: `agent < admin < owner`. "Agent+" means agent or higher.
 

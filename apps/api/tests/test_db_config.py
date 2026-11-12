@@ -68,7 +68,12 @@ def test_deployed_environments_require_secrets(
     with pytest.raises(ValidationError, match="APP_DB_PASSWORD, REDIS_PASSWORD"):
         _settings(app_env=env)
 
-    ok = _settings(app_env=env, app_db_password=SecretStr("a"), redis_password=SecretStr("b"))
+    ok = _settings(
+        app_env=env,
+        app_db_password=SecretStr("a"),
+        redis_password=SecretStr("b"),
+        web_origin="https://app.example.com",
+    )
     assert ok.app_env is env
 
 

@@ -141,6 +141,17 @@ Starlette 1.10 (pulled in by FastAPI 0.162) deprecates `httpx` for `TestClient` 
 - **SQLAlchemy 2.1 needs the `asyncio` extra** for greenlet; it is no longer installed by default.
 - **Integration tests** use a disposable `leadflow_test` database and `leadflow_app_test` role, Redis db 15, and skip cleanly when PostgreSQL is not running.
 
+### ADR-021 Web app foundation — Accepted (2026-11-12)
+- **Scaffolded with the official `create-next-app` 16.4.6** (App Router, TypeScript, Tailwind, ESLint, `src/`, Turbopack). It enables **Cache Components** and **Partial Prefetching**: data is dynamic by default and each route ships a prerendered static shell. We keep these defaults; both become standard in the next Next.js major.
+- **Versions follow the scaffold, not "latest":** TypeScript 5 (7.0 is the new native compiler and Next's type-check integration is built around 5), ESLint 9 (ESLint 10 runs, but four plugins inside `eslint-config-next` declare peer support only up to 9). Revisit both when Next.js supports them.
+- **pnpm workspace at the repo root** (`pnpm-workspace.yaml`, root `package.json` pins `pnpm@10.28.0`, Node ≥ 22.12). `apps/web` is `@leadflow/web`; the widget and contracts packages join later. The Python API stays outside the workspace (uv).
+- **Browser → API directly, with CORS** (not a Next.js proxy), as ADR-004 assumes `app.` / `api.` subdomains. The API allows exactly one origin (`WEB_ORIGIN`), with credentials (for HttpOnly session cookies), a fixed method/header list, and exposes `X-Request-ID`. Wildcards, paths and credentials in the origin are rejected; staging/production require a public `https` origin.
+- **API client** (`src/lib/api/client.ts`): every request sends cookies; every failure becomes an `ApiError` with a stable `code` (server envelope codes, or `NETWORK_ERROR` / `TIMEOUT` / `HTTP_ERROR` / `INVALID_RESPONSE`) and the request id. UI code never parses raw responses.
+- **`NEXT_PUBLIC_API_URL` is inlined at build time** (Next.js behaviour). A production build without it fails. A Docker image is therefore built per environment (step 5 / deployment).
+- **Tests:** Vitest 5 + Testing Library + jsdom, per the Next.js guide. Vite 8 resolves the `@/*` alias natively (`resolve.tsconfigPaths`), so `vite-tsconfig-paths` is not needed. Tests sit beside the code as `*.test.ts(x)`.
+- **Data fetching in client components** follows the React lint rule `set-state-in-effect`: state is set only in promise callbacks; refreshes are triggered by changing a key, and superseded requests are aborted and ignored.
+- **Development preview pages are `noindex`** until launch.
+
 ### Deferred
 - Vector store for knowledge retrieval (pgvector in the same Postgres is the default candidate) — Stage 6.
 - Billing provider (Stripe for US/UK, Razorpay for India are the candidates) — Stage 9.

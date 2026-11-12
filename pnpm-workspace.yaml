@@ -1,0 +1,13 @@
+# pnpm workspace: JavaScript/TypeScript packages of the monorepo.
+# The Python API (apps/api) is managed separately with uv.
+packages:
+  - apps/web
+  # - apps/widget          (Stage 5)
+  # - packages/contracts   (Stage 2+)
+
+# Packages whose install scripts are NOT run (carried over from create-next-app).
+# Both ship prebuilt platform binaries as optional dependencies, so their
+# install scripts are not needed.
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver

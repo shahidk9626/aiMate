@@ -14,6 +14,7 @@ from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -74,6 +75,30 @@ class Settings(BaseSettings):
 
     readiness_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
 
+    # --- Browser access -------------------------------------------------------
+    # The only origin allowed to call the API from a browser (CORS, and the
+    # Origin check for CSRF in Stage 2). Exactly one origin, no wildcard.
+    web_origin: str = "http://localhost:3000"
+
+    @field_validator("web_origin")
+    @classmethod
+    def _valid_origin(cls, value: str) -> str:
+        parts = urlsplit(value.strip())
+        if (
+            parts.scheme not in ("http", "https")
+            or not parts.hostname
+            or "*" in value
+            or parts.path not in ("", "/")
+            or parts.query
+            or parts.fragment
+            or parts.username
+            or parts.password
+        ):
+            raise ValueError("must be a single origin like https://app.example.com")
+        # Normalised: scheme://host[:port], lowercase, no trailing slash.
+        port = f":{parts.port}" if parts.port else ""
+        return f"{parts.scheme}://{parts.hostname.lower()}{port}"
+
     @field_validator("postgres_user", "app_db_user")
     @classmethod
     def _valid_role_name(cls, value: str) -> str:
@@ -94,6 +119,11 @@ class Settings(BaseSettings):
             ]
             if missing:
                 raise ValueError(f"required in {self.app_env.value}: {', '.join(missing)}")
+            web = urlsplit(self.web_origin)
+            if web.scheme != "https" or web.hostname in ("localhost", "127.0.0.1"):
+                raise ValueError(
+                    f"WEB_ORIGIN must be a public https origin in {self.app_env.value}"
+                )
         if self.app_db_user == self.postgres_user:
             raise ValueError("APP_DB_USER must differ from POSTGRES_USER (owner role)")
         return self

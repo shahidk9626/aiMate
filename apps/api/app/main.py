@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
 from app.api.v1.router import API_V1_PREFIX, api_router
@@ -15,7 +16,7 @@ from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.redis import create_redis_client
-from app.core.request_context import RequestContextMiddleware
+from app.core.request_context import REQUEST_ID_HEADER, RequestContextMiddleware
 from app.db.engine import async_session_factory, create_async_db_engine
 
 logger = get_logger("app.lifecycle")
@@ -55,6 +56,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_exception_handlers(app)
     app.add_middleware(RequestContextMiddleware)
+    # Added last = outermost, so CORS headers are also set on error responses
+    # produced inside the app. Exactly one trusted origin; credentials allowed
+    # because the dashboard authenticates with HttpOnly cookies (ADR-004).
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[settings.web_origin],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=[
+            "Content-Type",
+            "X-Requested-With",
+            "X-Tenant-ID",
+            "Idempotency-Key",
+            REQUEST_ID_HEADER,
+        ],
+        expose_headers=[REQUEST_ID_HEADER],
+        max_age=600,
+    )
 
     app.include_router(health_router)
     app.include_router(api_router)

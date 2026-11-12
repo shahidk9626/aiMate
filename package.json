@@ -1,0 +1,14 @@
+{
+  "name": "ai-leadflow",
+  "private": true,
+  "description": "AI LeadFlow monorepo (JavaScript workspaces). The API lives in apps/api and uses uv.",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @leadflow/web dev",
+    "build:web": "pnpm --filter @leadflow/web build",
+    "check:web": "pnpm --filter @leadflow/web check"
+  }
+}
