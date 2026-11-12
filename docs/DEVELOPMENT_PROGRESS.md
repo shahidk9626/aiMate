@@ -2,9 +2,10 @@
 
 ## Current state
 
-**Milestone:** Stage 1 — Foundation — **COMPLETE** (2026-11-12)
-**Branch:** `stage-1/foundation` (not yet merged into `main`).
-**Next:** Stage 2 — Authentication and multi-tenancy. First task: Stage 2 design review (see "Exact next task").
+**Milestone:** Stage 2 — Authentication and multi-tenancy — **design review awaiting approval**
+**Branch:** `stage-2/auth-tenancy` (based on `stage-1/foundation`; neither merged into `main` yet).
+**Design:** `docs/STAGE_2_DESIGN.md` — decisions A–G need the product owner's answer before step 2.1.
+**Stage 1:** COMPLETE (2026-11-12).
 
 ## Completed
 
@@ -171,7 +172,9 @@ Not built in Stage 1, by design: authentication, tenants, any product feature, t
 
 ## Exact next task
 
-**Stage 2 — Authentication and multi-tenancy.** Start with a short design review for approval, before any code:
+**Get approval for `docs/STAGE_2_DESIGN.md` (decisions A–G), then Stage 2 step 2.1:** migration `0002` (tables, tenant mixin, RLS policies, `SECURITY DEFINER` lookup functions) and database-level isolation tests.
+
+Original Stage 2 brief (now covered by the design document):
 1. Data model for migration `0002`: `users`, `tenants`, `memberships`, `auth_sessions`, `password_reset_tokens`, `invitations`, `audit_logs`. RLS on tenant tables. Tenant mixin (`tenant_id`, `UNIQUE(tenant_id, id)`).
 2. Endpoint contracts: register, login, refresh, logout, me, password forgot/reset, tenant profile, members, invitations.
 3. New dependencies to explain: `argon2-cffi` (passwords), `pyjwt` (access tokens).
@@ -189,7 +192,7 @@ Suggested before Stage 2:
 |---|---|---|
 | 0 | Architecture review | Done, approved |
 | 1 | Foundation | **Done** (2026-11-12) |
-| 2 | Auth + multi-tenancy | Next — design review first |
+| 2 | Auth + multi-tenancy | Design review written, awaiting approval |
 | 3 | CRM | Not started |
 | 4 | Unified inbox | Not started |
 | 5 | Website widget | Not started |

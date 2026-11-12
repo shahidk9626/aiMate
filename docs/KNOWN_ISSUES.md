@@ -2,7 +2,9 @@
 
 ## Pending product-owner decisions
 
-None open. Decisions D1–D10 from the Day 1 review were approved on 2026-11-12 (see "Resolved decisions").
+Stage 2 decisions **A–G** in `docs/STAGE_2_DESIGN.md` §2: session mechanism (A), email provider (B), email verification (C), signup "email taken" response (D), password rules (E), page protection (F), pre-tenant lookups (G). They block Stage 2 step 2.1.
+
+Decisions D1–D10 from the Day 1 review were approved on 2026-11-12 (see "Resolved decisions").
 
 ## Resolved decisions (2026-11-12)
 
