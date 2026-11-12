@@ -1,6 +1,6 @@
 # API Contracts
 
-**Status: health/readiness probes and error envelope implemented (Stage 1, steps 2–3); everything else PROPOSED.** Each endpoint is marked Implemented with its request/response schema when it ships. The generated OpenAPI document (`/api/v1/openapi.json`) becomes the machine-readable contract; TypeScript types in `packages/contracts` are generated from it.
+**Status: health probes, error and success envelopes, CSRF/limits, and the Stage 2 authentication endpoints are implemented; everything else is PROPOSED.** Each endpoint is marked Implemented with its request/response schema when it ships. The generated OpenAPI document (`/api/v1/openapi.json`) becomes the machine-readable contract; TypeScript types in `packages/contracts` are generated from it.
 
 ## Conventions
 
@@ -17,9 +17,9 @@
 - Pagination: cursor based — `?limit=50&cursor=<opaque>`.
 - Roles: `agent < admin < owner`. "Agent+" means agent or higher.
 
-Success:
+Success (implemented, `app/core/responses.py`; `next_cursor` arrives with the first paginated list):
 ```json
-{ "data": { }, "meta": { "request_id": "…", "next_cursor": null } }
+{ "data": { }, "meta": { "request_id": "…" } }
 ```
 
 Error:
@@ -53,21 +53,39 @@ Health probes are mounted at the root, outside `/api/v1`: they are infrastructur
 | `GET /api/v1/openapi.json`, `GET /api/v1/docs` | OpenAPI schema, Swagger UI | Public, **disabled in production** | **Implemented** |
 
 ## Stage 2 — Auth and tenancy
+
+Session cookie: `lf_session` (local/test) or `__Host-lf_session` (staging/production); HttpOnly, SameSite=Lax, Path=/, 30-day max age. Sessions also expire after 7 days without activity. Writes need `X-Requested-With: leadflow` (CSRF, see Conventions).
+
+### Implemented (step 2.3)
+
+| Method + path | Request body | Success | Errors | Limits |
+|---|---|---|---|---|
+| `POST /auth/signup` | `{email, password, full_name, business_name, timezone?}` (IANA zone, default `UTC`; unknown fields rejected) | `201`, `data: Me`, sets session cookie | `409 EMAIL_TAKEN`; `422 VALIDATION_ERROR`; `422 PASSWORD_POLICY` (details per rule) | 5 per hour per IP |
+| `POST /auth/login` | `{email, password}` | `200`, `data: Me`, sets a new session cookie | `401 INVALID_CREDENTIALS` (identical for unknown email, wrong password, disabled account) | 5/min per IP+email; 30/min per IP |
+| `POST /auth/logout` | — | `204`, session revoked server-side, cookie cleared. Idempotent | — | — |
+| `GET /me` | — | `200`, `data: Me` | `401 UNAUTHENTICATED` | — |
+| `PATCH /me` | `{full_name}` | `200`, `data: Me` | `401`, `422` | — |
+| `POST /me/password` | `{current_password, new_password}` | `204`; **all** sessions revoked, a new cookie issued for this browser | `400 INCORRECT_CURRENT_PASSWORD`; `422 PASSWORD_POLICY` | 5 per 15 min per user |
+
+`Me`:
+```json
+{ "user": { "id": "uuid", "email": "owner@example.com", "full_name": "Asha Verma",
+            "email_verified": false, "created_at": "2026-11-12T18:20:39Z" },
+  "memberships": [ { "tenant_id": "uuid", "tenant_name": "Acme Dental",
+                     "tenant_slug": "acme-dental-6bd973", "role": "owner" } ] }
+```
+Passwords: 10–128 characters, not equal to the email. Emails are matched case-insensitively.
+
+### Planned (steps 2.4–2.5; see `STAGE_2_DESIGN.md` §8)
+
 | Method + path | Purpose | Access |
 |---|---|---|
-| `POST /auth/register` | Create user + tenant + owner membership | Public, rate limited |
-| `POST /auth/login` | Set session cookies | Public, rate limited |
-| `POST /auth/refresh` | Rotate refresh token | Refresh cookie |
-| `POST /auth/logout` | Revoke session, clear cookies | Authenticated |
-| `POST /auth/password/forgot` | Send reset email (always 202) | Public, rate limited |
-| `POST /auth/password/reset` | Set new password, revoke all sessions | Reset token |
-| `GET /me` | User + memberships | Authenticated |
-| `PATCH /me` | Update profile | Authenticated |
+| `POST /auth/password/forgot` · `POST /auth/password/reset` | Password reset by email | Public, rate limited · Reset token |
+| `POST /auth/email/verify` · `POST /auth/email/verify/resend` | Email verification | Token · Session |
 | `GET /tenant` · `PATCH /tenant` | Business profile and settings | Member · Admin+ |
-| `GET /tenant/members` | List team | Member |
-| `PATCH /tenant/members/{id}` · `DELETE …` | Change role / remove | Owner (admin for agents) |
-| `POST /tenant/invitations` | Invite by email | Admin+ |
-| `POST /invitations/accept` | Accept invite | Invite token |
+| `GET /tenant/members` · `PATCH/DELETE /tenant/members/{user_id}` | Team | Member · per role matrix |
+| `GET/POST /tenant/invitations` · `DELETE /tenant/invitations/{id}` | Invitations | Admin+ (verified email) |
+| `GET /invitations/{token}` · `POST /invitations/accept` | Accept an invitation | Token |
 
 ## Stage 3 — CRM
 | Method + path | Purpose | Access |

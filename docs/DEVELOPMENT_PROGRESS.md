@@ -2,7 +2,7 @@
 
 ## Current state
 
-**Milestone:** Stage 2 — Authentication and multi-tenancy — steps 2.1–2.2 of 7 complete
+**Milestone:** Stage 2 — Authentication and multi-tenancy — steps 2.1–2.3 of 7 complete
 **Branch:** `stage-2/auth-tenancy` (based on `stage-1/foundation`; neither merged into `main` yet).
 **Design:** `docs/STAGE_2_DESIGN.md`, approved 2026-11-12 (ADR-023).
 **Stage 1:** COMPLETE (2026-11-12).
@@ -263,17 +263,61 @@ What the new tests prove:
   - Keys contain no personal data and expire.
   - A Redis outage fails open.
 
+### Stage 2, step 2.3 — Authentication endpoints (2026-11-12)
+
+Files created:
+- `app/modules/identity/schemas.py`, `service.py`, `dependencies.py`, `router.py`, `rate_limits.py`.
+- `app/modules/audit/service.py`, `app/modules/tenancy/service.py`.
+- `app/core/responses.py` (success envelope).
+- `tests/integration/test_auth_api.py` (26 tests).
+
+Files changed:
+- `app/db/session.py`: commit before responding (see bug below).
+- `app/api/v1/router.py`: mounts the identity routes.
+- `app/core/client_ip.py`: valid IPs only.
+
+**Bug found and fixed (affects every endpoint):** with FastAPI's default dependency scope, `DbSession` committed *after* the response was sent. A failed commit would still have answered "201 Created" and set a session cookie for an account that was never saved. I reproduced it in isolation, then fixed it with `scope="function"`. A regression test now proves that a failed commit returns 500 without cookies.
+
+Other issues caught by tests: SQLAlchemy 2.1 deprecated `Result.tuples()` (warnings are errors in tests); test clients on separate event loops must not share a connection pool (test-only).
+
+Results:
+| Check | Result |
+|---|---|
+| `pytest` | **189 passed** (26 new auth API tests) |
+| ruff, strict mypy | Clean (68 files) |
+| Manual curl against dev DB | signup 201 + HttpOnly cookie → `/me` 200 → duplicate 409 → wrong password 401 → logout 204 → `/me` 401 |
+
+What the new tests prove (over HTTP, against PostgreSQL with RLS and Redis):
+- **Signup:**
+  - Creates the user, the business with its timezone, the owner membership, an Argon2id hash, an HttpOnly cookie and an audit entry.
+  - Rejects duplicate emails in any case (409), invalid input and extra fields like `is_platform_admin` (422), and passwords that break the policy or equal the email.
+  - Requires the CSRF header, and is limited to 5 per hour per IP.
+- **Login:**
+  - Works with any email case.
+  - Wrong password and unknown email return identical responses with one Argon2 verification each.
+  - Failed attempts are audited even though the request fails.
+  - Disabled users can neither log in nor keep using a session.
+  - Rate-limited per IP+email with `Retry-After`, without affecting other emails.
+- **Sessions:**
+  - Forged or missing cookies get 401.
+  - Logout revokes server-side, so a replayed cookie fails, and repeating it is harmless.
+  - The idle and absolute expiries are enforced, and activity refreshes `last_seen_at`.
+- **Profile and password:**
+  - Profile names are cleaned up.
+  - A password change requires the current password, rotates this browser's cookie, signs out other devices, retires the old password, and is audited.
+- **Isolation:** two users each see only their own account and business.
+- **Transactions:** a failed commit never reports success.
+
 ## Exact next task
 
-**Stage 2, step 2.3 — Auth endpoints** (`app/modules/identity/`): service + router for
-1. `POST /auth/signup`: user, business, owner membership, session, audit; 409 `EMAIL_TAKEN`; rate limit 5/hour/IP.
-2. `POST /auth/login`: constant-time failure, rehash-on-login, `last_login_at`, new session; rate limits 5/min IP+email, 30/min IP.
-3. `POST /auth/logout`.
-4. `current_user` dependency: session lookup via `auth_session_lookup`, idle/absolute expiry, `last_seen_at` touch, sets `app.user_id`.
-5. `GET /me`, `PATCH /me`, `POST /me/password` (revokes other sessions).
-6. Audit entries for each; integration tests end to end through HTTP; docs; stop and report.
+**Stage 2, step 2.4 — Tenant context, roles, business and team endpoints:**
+1. `TenantContext` dependency: `X-Tenant-ID` → active membership check (404 + security log if none) → sets `app.tenant_id`; `ctx.require(role)`.
+2. `GET/PATCH /tenant` (profile, timezone, locale; admin+ to edit).
+3. `GET /tenant/members`, `PATCH /tenant/members/{user_id}` (role), `DELETE /tenant/members/{user_id}` (remove or leave), enforcing the role matrix and the last-owner rule.
+4. Audit `tenant.updated`, `member.role_changed`, `member.removed`.
+5. Tests: the full role matrix, cross-tenant 404s for a user in two businesses, a forged `X-Tenant-ID`, last-owner protection.
 
-Email verification and password reset come with email delivery in step 2.5.
+Invitations need email, so they come in step 2.5.
 
 Original Stage 2 brief (now covered by the design document):
 1. Data model for migration `0002`: `users`, `tenants`, `memberships`, `auth_sessions`, `password_reset_tokens`, `invitations`, `audit_logs`. RLS on tenant tables. Tenant mixin (`tenant_id`, `UNIQUE(tenant_id, id)`).
@@ -293,7 +337,7 @@ Suggested before Stage 2:
 |---|---|---|
 | 0 | Architecture review | Done, approved |
 | 1 | Foundation | **Done** (2026-11-12) |
-| 2 | Auth + multi-tenancy | In progress — steps 2.1–2.2 of 7 done |
+| 2 | Auth + multi-tenancy | In progress — steps 2.1–2.3 of 7 done |
 | 3 | CRM | Not started |
 | 4 | Unified inbox | Not started |
 | 5 | Website widget | Not started |

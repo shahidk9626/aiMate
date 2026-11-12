@@ -174,6 +174,28 @@ With the API running, http://127.0.0.1:8000/readyz returns `200` with `"database
 
 If you created `.env` in step 1, add the new keys from `.env.example` (`POSTGRES_HOST`, `APP_DB_USER`, `APP_DB_PASSWORD`, `REDIS_HOST`, `REDIS_DB`, `LOG_LEVEL`). Existing database data is unaffected.
 
+### Try the login API by hand (with the API running)
+
+Writes need the CSRF header; cookies are kept in a local file. Sign up, which creates a business and logs you in:
+
+```bash
+curl -i -c cookies.txt -b cookies.txt -H "X-Requested-With: leadflow" -H "Content-Type: application/json" -X POST http://localhost:8000/api/v1/auth/signup -d '{"email":"you@example.com","password":"correct horse battery","full_name":"Your Name","business_name":"Demo Business","timezone":"Asia/Kolkata"}'
+```
+
+Who am I:
+
+```bash
+curl -b cookies.txt http://localhost:8000/api/v1/me
+```
+
+Log out:
+
+```bash
+curl -i -c cookies.txt -b cookies.txt -H "X-Requested-With: leadflow" -X POST http://localhost:8000/api/v1/auth/logout
+```
+
+The interactive docs at `/api/v1/docs` show every endpoint, but their "Try it out" button cannot send writes (by design, see `KNOWN_ISSUES.md`).
+
 ### 4. Tests and quality checks
 
 Unit and integration tests (integration tests need section 1 running; they create and drop their own `leadflow_test` database and never touch `leadflow`):

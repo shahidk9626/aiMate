@@ -1,9 +1,14 @@
 """FastAPI database session dependency.
 
 One session and one transaction per request: committed when the handler
-returns, rolled back if it raises. Tenant-scoped handlers call
-``set_tenant`` inside this transaction (Stage 2 wires that into the
-``TenantContext`` dependency so individual handlers cannot forget).
+returns, rolled back if it raises. Tenant-scoped handlers receive the tenant
+through the ``TenantContext`` dependency, which sets it on this transaction.
+
+``scope="function"`` is essential: it makes FastAPI run the commit *before*
+the response is sent. With the default scope the commit runs after the
+response, so a failed commit (e.g. a unique-constraint race) would still have
+answered "201 Created" and set cookies for data that was never saved.
+Verified in Stage 2 step 2.3; covered by tests/integration/test_auth_api.py.
 """
 
 from collections.abc import AsyncIterator
@@ -19,4 +24,4 @@ async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
         yield session
 
 
-DbSession = Annotated[AsyncSession, Depends(get_db_session)]
+DbSession = Annotated[AsyncSession, Depends(get_db_session, scope="function")]

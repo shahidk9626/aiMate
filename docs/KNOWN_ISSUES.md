@@ -54,6 +54,11 @@ Decisions D1–D10 from the Day 1 review were approved on 2026-11-12 (see "Resol
 - The web image is ~413 MB, mostly the Node base image (~333 MB). Acceptable for now; a distroless or Alpine runtime can cut it later.
 - Next.js's cache is per container (in memory + local disk). Fine for one web instance on a VPS; multiple instances would need a shared cache handler (see the Next.js self-hosting guide).
 
+- Swagger UI (`/api/v1/docs`) cannot call write endpoints: it neither sends the CSRF header nor runs on `WEB_ORIGIN`. Use the curl examples in `SETUP_GUIDE.md`. Revisit if a developer-facing API is ever offered.
+- Email verification and password reset are not available yet (step 2.5); until then a forgotten password cannot be recovered except by an operator.
+- There is no "sign out all devices" or "active sessions" page yet; changing the password signs out all other sessions.
+- Integration tests that simulate several browsers create one app instance per browser, because each TestClient runs its own event loop and an async connection pool must not cross loops. Production runs one loop per process, so this is test-only.
+
 ## Bugs
 
 None.

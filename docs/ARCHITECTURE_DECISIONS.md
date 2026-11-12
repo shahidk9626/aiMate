@@ -189,6 +189,19 @@ Approved by the product owner as recommended in `docs/STAGE_2_DESIGN.md` §2.
 - **Session cookie:** `lf_session` locally, `__Host-lf_session` with `Secure` elsewhere; HttpOnly, SameSite=Lax, Path=/, no Domain, Max-Age 30 days.
 - **Client IP:** TCP peer by default; `CF-Connecting-IP` only with `TRUSTED_PROXY=cloudflare`.
 
+### ADR-025 Authentication endpoints and request transactions — Accepted (2026-11-12)
+- **Commit before responding.** `DbSession` is declared with `Depends(..., scope="function")`. With FastAPI's default scope the dependency's commit runs after the response is sent. Verified: a failing commit still returned `201` and set the cookie. A regression test now proves a failed commit returns `500` without cookies.
+- **Layout per module:** `schemas.py` (Pydantic I/O), `service.py` (all rules), `dependencies.py` (`CurrentAuth`, client info), `router.py` (thin), `rate_limits.py`. Routers are mounted in `app/api/v1/router.py`.
+- **Success envelope** `{data, meta: {request_id}}` via `app/core/responses.py`.
+- **Failed logins** are audited by `record_independently` in their own transaction, because the failing request's transaction rolls back.
+- **Login equalises work and answers:**
+  - Unknown email, wrong password and disabled account all cost one Argon2 verification and return the same `401 INVALID_CREDENTIALS`.
+  - Login always issues a fresh session token. A token planted before login is never attached to the victim's account, so no session fixation.
+- **Password change** revokes every session of the user and issues a new cookie for the current browser.
+- **Email validation is structural** (no `email-validator` dependency); the verification email (step 2.5) proves ownership.
+- **Client IPs** are stored and rate-limited only when they parse as IP addresses.
+- **Interactive API docs cannot send writes** (CSRF header and Origin). Use curl or the web app; reading endpoints still work in the docs page.
+
 ### Deferred
 - Vector store for knowledge retrieval (pgvector in the same Postgres is the default candidate) — Stage 6.
 - Billing provider (Stripe for US/UK, Razorpay for India are the candidates) — Stage 9.

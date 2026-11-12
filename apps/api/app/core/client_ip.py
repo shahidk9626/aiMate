@@ -13,11 +13,17 @@ from fastapi import Request
 from app.core.config import Settings
 
 
+def _valid_ip(raw: str | None) -> str | None:
+    try:
+        return str(ipaddress.ip_address((raw or "").strip()))
+    except ValueError:
+        return None
+
+
 def client_ip(request: Request, settings: Settings) -> str | None:
+    """A valid IP address string, or None (stored in INET columns and rate-limit keys)."""
     if settings.trusted_proxy == "cloudflare":
-        raw = request.headers.get("cf-connecting-ip", "").strip()
-        try:
-            return str(ipaddress.ip_address(raw))
-        except ValueError:
-            pass
-    return request.client.host if request.client else None
+        forwarded = _valid_ip(request.headers.get("cf-connecting-ip"))
+        if forwarded:
+            return forwarded
+    return _valid_ip(request.client.host) if request.client else None
