@@ -2,49 +2,68 @@
 
 ## Current state
 
-**Milestone:** Day 1 — Architecture review and project initialization
-**Status:** Review delivered, **awaiting product-owner approval**. No application code exists.
+**Milestone:** Stage 1 — Foundation
+**Status:** Step 1 of 5 complete. Branch `stage-1/foundation`.
+**Next:** Stage 1, step 2 — FastAPI application skeleton (see below).
 
 ## Completed
 
-### Day 1 (2026-11-12)
-- Inspected the project directory: empty, not a git repository.
-- Read HLD v1.0 and LLD v1.0 in full.
-- Wrote the architecture review: 15 inconsistencies, 12 missing requirements (`ARCHITECTURE_DECISIONS.md` Part 1).
-- Proposed ADR-003 … ADR-016.
-- Proposed schema v1.1 (`DATABASE_SCHEMA.md`) and API surface (`API_CONTRACTS.md`).
-- Checked current stable dependency versions on PyPI/npm (`SETUP_GUIDE.md`).
+### Day 1 — Architecture review (2026-11-12)
+- Read HLD v1.0 and LLD v1.0; wrote the review (15 inconsistencies, 12 missing requirements) and ADR-003 … ADR-016.
+- Proposed schema v1.1 and the API surface; looked up current dependency versions.
+- Product owner approved all corrections, ADRs and decisions D1–D10 on 2026-11-12.
+- Docs committed to `main` (commit `dff7016`).
+
+### Stage 1, step 1 — Repository skeleton and local data services (2026-11-12)
 
 Files created:
-- `docs/AI-LeadFlow-HLD.html`, `docs/AI-LeadFlow-LLD.html` (copies of the supplied v1.0 documents, unmodified)
-- `docs/PROJECT_CONTEXT.md`, `docs/ARCHITECTURE_DECISIONS.md`, `docs/DEVELOPMENT_PROGRESS.md`, `docs/DATABASE_SCHEMA.md`, `docs/API_CONTRACTS.md`, `docs/SETUP_GUIDE.md`, `docs/KNOWN_ISSUES.md`
+- `.gitignore` — ignores `.env*` (except `.env.example`), Python/Node build output, caches.
+- `.env.example` — PostgreSQL and Redis variables with `change-me` placeholders.
+- `infra/docker-compose.yml` — PostgreSQL 17 + Redis 8, health checks, named volumes, localhost-only ports, Redis password required, missing-variable guard.
+- `README.md` — overview, layout, quick start, documentation index.
 
-Tests: none (no code).
+Docs updated: `ARCHITECTURE_DECISIONS.md` (all ADRs Accepted, ADR-017 added), `KNOWN_ISSUES.md`, `SETUP_GUIDE.md`, this file.
 
-## Blocked on product owner
+Directory decision: `apps/api`, `apps/web`, `apps/widget`, `packages/contracts` are **not** created as empty placeholders; each appears in the step that builds it (`create-next-app` also refuses non-empty target directories).
 
-Decisions D1–D8 in `KNOWN_ISSUES.md`. D1 (git repository) and D2 (approve the proposed ADRs) block Stage 1.
+Verification (manual, all passed):
+| Check | Result |
+|---|---|
+| `docker compose config` with `.env` | Valid |
+| `.env` git-ignored | Yes |
+| Both services healthy after `up -d` | Healthy in ~6 s |
+| PostgreSQL version / timezone / encoding | 17.11 / UTC / UTF8 |
+| Host TCP login with correct password | OK |
+| Login with wrong password | Rejected |
+| `citext`, `pgcrypto` extensions available | Yes (1.6, 1.3) |
+| Redis with password | `PONG` |
+| Redis without password | `NOAUTH Authentication required` |
+| Redis password absent from container args | Yes |
+| Data survives `docker compose restart` | Yes |
+| Ports bound to 127.0.0.1 only | Yes |
 
-## Exact next task (after approval)
+Automated tests: none yet (no application code). The first pytest suite arrives in step 2.
 
-**Stage 1, step 1 — monorepo skeleton.** Nothing else in the same step.
-1. `git init`, `.gitignore`, `.env.example`, root `README.md`.
-2. Create the directory structure from the approved layout.
-3. `infra/docker-compose.yml` with PostgreSQL and Redis only; verify both start and accept connections.
-4. Stop and report.
+## Exact next task
 
-Then, each as a separate reviewed step:
-- Step 2: FastAPI app factory, typed settings, structured logging, request-id middleware, `/healthz`, `/readyz`, first pytest.
-- Step 3: SQLAlchemy engine/session, Alembic, empty baseline migration, DB roles (owner vs app role) for RLS.
+**Stage 1, step 2 — FastAPI application skeleton** in `apps/api`:
+1. `pyproject.toml` managed by `uv`, Python 3.13; runtime deps: fastapi, uvicorn, pydantic-settings, structlog; dev deps: pytest, httpx, ruff, mypy.
+2. `app/main.py` app factory; `app/core/config.py` typed settings from env; `app/core/logging.py` JSON logs without PII; request-id middleware; standard error envelope.
+3. `GET /healthz` (liveness). `/readyz` (DB + Redis) comes in step 3 when the DB layer exists.
+4. Tests: health endpoint, request-id header, error envelope, settings validation.
+5. Run ruff, mypy and pytest; update docs; stop and report.
+
+Remaining Stage 1 steps:
+- Step 3: SQLAlchemy 2.1 + psycopg 3 engine/session, Alembic baseline, DB roles (owner vs RLS-restricted app role), `/readyz`.
 - Step 4: Next.js + TypeScript + Tailwind scaffold with a page that calls the health endpoint.
-- Step 5: API and web Dockerfiles, full `docker compose up`, update `SETUP_GUIDE.md`, mark HLD/LLD v1.1.
+- Step 5: API/web Dockerfiles, full `docker compose up`, HLD/LLD v1.1, Stage 1 sign-off.
 
 ## Stage tracker
 
 | Stage | Scope | Status |
 |---|---|---|
-| 0 | Architecture review | Awaiting approval |
-| 1 | Foundation | Not started |
+| 0 | Architecture review | Done, approved |
+| 1 | Foundation | In progress — step 1 of 5 done |
 | 2 | Auth + multi-tenancy | Not started |
 | 3 | CRM | Not started |
 | 4 | Unified inbox | Not started |

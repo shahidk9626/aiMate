@@ -1,6 +1,6 @@
 # Setup Guide
 
-**Status: nothing is runnable yet.** The repository contains documentation only. Commands are added here as each piece is built and verified; this file must never describe a step that has not been run successfully.
+**Status: local PostgreSQL and Redis are runnable (Stage 1, step 1).** The API and web app do not exist yet. Commands are added here as each piece is built and verified; this file must never describe a step that has not been run successfully.
 
 ## Required tooling (planned)
 
@@ -40,7 +40,19 @@ Backend dev: pytest 9.x, pytest-asyncio, ruff, mypy.
 
 Frontend: Next.js 16.x, React 19.x, Tailwind CSS 4.x, TypeScript (version as pinned by the Next.js scaffold — TypeScript 7.0 is very new and is adopted only if the Next.js toolchain supports it).
 
-## Environment variables (planned — `.env.example` is created in Stage 1)
+## Environment variables in use now (`.env.example`)
+
+| Variable | Used by | Notes |
+|---|---|---|
+| `APP_ENV` | all | `local` |
+| `POSTGRES_DB` | compose | Database name, default `leadflow` |
+| `POSTGRES_USER` | compose | Owner role, default `leadflow_owner`. Migrations only once the app role exists (step 3) |
+| `POSTGRES_PASSWORD` | compose | Secret. Compose refuses to start without it |
+| `POSTGRES_PORT` | compose | Host port, default `5432`, bound to 127.0.0.1 |
+| `REDIS_PASSWORD` | compose | Secret. Redis requires auth even locally |
+| `REDIS_PORT` | compose | Host port, default `6379`, bound to 127.0.0.1 |
+
+## Environment variables (planned)
 
 | Variable | Used by | Notes |
 |---|---|---|
@@ -60,4 +72,51 @@ Secrets live in untracked `.env` files locally and in the host's secret store in
 
 ## Local run
 
-To be written in Stage 1 once `docker compose up` and the health endpoints are verified.
+### 1. Data services (verified 2026-11-12)
+
+Prerequisite: Docker with the Compose plugin. All commands run from the repository root.
+
+Create your local environment file, then replace every `change-me` value with your own password:
+
+```bash
+cp .env.example .env
+```
+
+Start PostgreSQL and Redis:
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.yml up -d
+```
+
+Both services should show `(healthy)` within about 10 seconds:
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.yml ps
+```
+
+Optional connection check (needs `psql` on your machine; enter `POSTGRES_PASSWORD` when prompted):
+
+```bash
+psql -h 127.0.0.1 -U leadflow_owner -d leadflow -c "select version();"
+```
+
+Stop the services (data is kept in Docker volumes):
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.yml down
+```
+
+Delete all local data as well (destructive):
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.yml down -v
+```
+
+Troubleshooting:
+- `required variable … is missing a value`: `.env` is missing or a variable is empty.
+- Port already in use: change `POSTGRES_PORT` / `REDIS_PORT` in `.env`.
+- Changing `POSTGRES_PASSWORD` after the first start has no effect on the existing volume; run `down -v` to re-initialise (deletes data).
+
+### 2. API, worker and web
+
+To be written as each is built (Stage 1, steps 2–5).
