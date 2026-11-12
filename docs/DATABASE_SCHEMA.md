@@ -1,12 +1,13 @@
 # Database Schema
 
-**Status: baseline revision `0001` applied (no tables yet). Tables below are PROPOSED (v1.1, approved design).** Based on LLD v1.0 §3 with the corrections in `ARCHITECTURE_DECISIONS.md` Part 1. Once a table is migrated, this file records the real state and the Alembic revision.
+**Status: revisions `0001`–`0002` applied: identity, tenancy, audit and outbox tables are LIVE. Tables from "Migration 2 — Stage 3" onwards are PROPOSED (v1.1, approved design).** Based on LLD v1.0 §3 with the corrections in `ARCHITECTURE_DECISIONS.md` Part 1. Once a table is migrated, this file records the real state and the Alembic revision.
 
 ## Applied migrations
 
 | Revision | File | Content |
 |---|---|---|
 | `0001` | `apps/api/alembic/versions/0001_baseline.py` | `citext` extension; `REVOKE CREATE ON SCHEMA public FROM PUBLIC`; app role `USAGE` on `public`; default privileges so the app role gets `SELECT, INSERT, UPDATE, DELETE` on every future table and `USAGE, SELECT` on sequences. Creates the app role `NOLOGIN` if bootstrap has not run yet. |
+| `0002` | `apps/api/alembic/versions/0002_identity_and_tenancy.py` | Tables `users`, `tenants`, `memberships`, `auth_sessions`, `email_tokens`, `invitations`, `audit_logs`, `outbox_events`. RLS policies (below), reduced app privileges (no DELETE on `tenants`/`users`, no UPDATE/DELETE on `audit_logs`), lookup role and four lookup functions (ADR-023). |
 
 ## Database roles (ADR-020)
 
@@ -14,7 +15,8 @@
 |---|---|---|---|
 | `leadflow_owner` (`POSTGRES_USER`) | Owns schema; runs Alembic and bootstrap | Local docker: superuser (image default). Production: database owner, **not** superuser | All |
 | `leadflow_app` (`APP_DB_USER`) | API and worker at runtime | `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS` | DML on tables via default privileges; no DDL; cannot read `alembic_version` |
-| `leadflow_app_test` | Integration tests only, dropped after the run | Same as app role | Same |
+| `leadflow_app_lookup` (`<APP_DB_USER>_lookup`) | Owns the pre-tenant lookup functions (ADR-023) | `NOLOGIN NOSUPERUSER NOBYPASSRLS` | Column-level SELECT on the columns the functions read; nothing else. Created by migration `0002` |
+| `leadflow_app_test`, `leadflow_app_test_lookup` | Integration tests only, dropped after the run | Same as app / lookup roles | Same |
 
 Created/updated by `uv run python -m app.db.bootstrap` (idempotent; also run after changing `APP_DB_PASSWORD`).
 
@@ -35,7 +37,40 @@ Created/updated by `uv run python -m app.db.bootstrap` (idempotent; also run aft
 - Tenant-owned tables: `tenant_id UUID NOT NULL → tenants(id)`, `UNIQUE(tenant_id, id)`, RLS enabled and forced (ADR-006). Child references use composite FKs `(tenant_id, x_id)` (ADR-007).
 - Every FK column is indexed. List endpoints get `(tenant_id, <sort column> DESC, id)` indexes for cursor pagination.
 
-## Migration 1 — Stage 2: identity and tenancy
+## Live in revision 0002 (Stage 2)
+
+Implemented as designed below, with these differences, all approved via ADR-023:
+- `password_reset_tokens` became **`email_tokens`**: `purpose` (`password_reset`|`email_verification`), `token_hash` unique, `user_id`, `expires_at`, `used_at`.
+- `auth_sessions` has no `family_id`/`rotated_at` (opaque sessions): `token_hash` unique, `user_id`, `created_at`, `last_seen_at`, `expires_at`, `revoked_at`, `user_agent`, `ip`.
+- `invitations` adds `accepted_user_id` and `revoked_at`; open-invite uniqueness is `(tenant_id, email) WHERE accepted_at IS NULL AND revoked_at IS NULL`.
+- `audit_logs` has no `updated_at`; the JSON column is `metadata` (ORM attribute `details`).
+- `outbox_events` was brought forward from the inbox migration (needed for email in Stage 2).
+- Every foreign-key column is indexed; check constraints are named `ck_<table>_<column>`.
+
+### RLS policies (revision 0002)
+
+| Table | SELECT | INSERT | UPDATE | DELETE |
+|---|---|---|---|---|
+| `tenants` | `id = tenant` OR active membership of current user | `id = tenant` | `id = tenant` | not granted |
+| `memberships` | `tenant_id = tenant` OR `user_id = user` | `tenant_id = tenant` | `tenant_id = tenant` | `tenant_id = tenant` |
+| `users` | `id = user` OR member of current tenant | `id = user` | `id = user` | not granted |
+| `auth_sessions`, `email_tokens` | `user_id = user` | same | same | same |
+| `invitations` | standard `tenant_id = tenant` | same | same | same |
+| `audit_logs` | `tenant_id = tenant` | `tenant_id IS NULL` OR `= tenant` | not granted | not granted |
+| `outbox_events` | no RLS (global, relay) | | | |
+
+`tenant` = `app.tenant_id`, `user` = `app.user_id` (both transaction-local, set by `app.db.tenant`). The lookup role additionally has `SELECT … TO <lookup role> USING (true)` on `users`, `auth_sessions`, `email_tokens`, `invitations`.
+
+### Lookup functions (SECURITY DEFINER, owner = lookup role, EXECUTE = app role only)
+
+| Function | Returns | Only when |
+|---|---|---|
+| `auth_user_id_by_email(citext)` | `uuid` | — |
+| `auth_session_lookup(bytea)` | `(session_id, user_id)` | not revoked, not expired |
+| `email_token_lookup(bytea, text)` | `(token_id, user_id)` | purpose matches, unused, not expired |
+| `invitation_lookup(bytea)` | `(invitation_id, tenant_id)` | not accepted, not revoked, not expired |
+
+## Original design — Stage 2: identity and tenancy (superseded by the section above where they differ)
 
 ### users (global)
 | Column | Type | Notes |

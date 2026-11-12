@@ -99,6 +99,9 @@ def integration_settings() -> Iterator[Settings]:
             sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(TEST_DATABASE))
         )
         admin.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(TEST_APP_ROLE)))
+        admin.execute(
+            sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(settings.db_lookup_role))
+        )
 
 
 @pytest.fixture

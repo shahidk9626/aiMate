@@ -30,7 +30,8 @@ _ENV_FILES: tuple[Path, ...] = (
 )
 
 # PostgreSQL role names are used as SQL identifiers in bootstrap/migrations.
-_ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+# Max 56 characters so "<app role>_lookup" stays within PostgreSQL's 63.
+_ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,55}$")
 
 
 class Environment(StrEnum):
@@ -164,6 +165,11 @@ class Settings(BaseSettings):
     def database_url(self) -> URL:
         """Runtime connection as the restricted app role."""
         return self._pg_url(self.app_db_user, self.app_db_password, None)
+
+    @property
+    def db_lookup_role(self) -> str:
+        """NOLOGIN role that owns the pre-tenant lookup functions (ADR-023)."""
+        return f"{self.app_db_user}_lookup"
 
     def migration_database_url(self, database: str | None = None) -> URL:
         """Owner connection for migrations and bootstrap only."""

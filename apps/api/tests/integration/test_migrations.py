@@ -28,7 +28,8 @@ def test_migrations_downgrade_to_base_and_upgrade_again(integration_settings: Se
     assert _current_revision(integration_settings) is None
 
     command.upgrade(config, "head")
-    assert _current_revision(integration_settings) == "0001"
+    head = ScriptDirectory.from_config(config).get_current_head()
+    assert _current_revision(integration_settings) == head
 
 
 def test_citext_extension_installed(integration_settings: Settings) -> None:

@@ -1,22 +1,30 @@
-"""SQL for tenant Row Level Security (ADR-006).
+"""SQL for Row Level Security (ADR-006, ADR-023).
 
-Used by Alembic migrations for every tenant-owned table and by the RLS tests,
-so the policy that is tested is exactly the policy that ships.
+Used by Alembic migrations and by the RLS tests, so the policies that are
+tested are exactly the policies that ship.
 
-- ENABLE + FORCE: the policy applies to the table owner too (superusers
-  still bypass RLS, which is why the app never connects as one).
-- ``current_setting(..., true)`` returns NULL when unset, so the comparison is
-  NULL and no row is visible or writable: fail closed.
+- ENABLE + FORCE: policies apply to the table owner too (superusers still
+  bypass RLS, which is why the app never connects as one).
+- ``current_setting(..., true)`` returns NULL when unset, so comparisons are
+  NULL and nothing matches: fail closed.
 - ``NULLIF(..., '')``: a setting that was set earlier in the session and then
   reset reads back as an empty string; treat it as unset rather than erroring
-  on a uuid cast.
+  on the uuid cast.
+
+Standard tenant tables use ``enable_tenant_rls_sql``. Tables with special
+rules (users, memberships, tenants, audit_logs, sessions, tokens) call
+``force_rls_sql`` and define their policies in the migration with
+``CURRENT_TENANT`` / ``CURRENT_USER``.
 """
 
 import re
 
-from app.db.tenant import TENANT_SETTING
+from app.db.tenant import TENANT_SETTING, USER_SETTING
 
 POLICY_NAME = "tenant_isolation"
+CURRENT_TENANT = f"NULLIF(current_setting('{TENANT_SETTING}', true), '')::uuid"
+CURRENT_USER = f"NULLIF(current_setting('{USER_SETTING}', true), '')::uuid"
+
 _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 
@@ -26,14 +34,20 @@ def _check(table: str) -> str:
     return table
 
 
-def enable_tenant_rls_sql(table: str) -> list[str]:
+def force_rls_sql(table: str) -> list[str]:
     t = _check(table)
-    current = f"NULLIF(current_setting('{TENANT_SETTING}', true), '')::uuid"
     return [
         f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY",
         f"ALTER TABLE {t} FORCE ROW LEVEL SECURITY",
+    ]
+
+
+def enable_tenant_rls_sql(table: str) -> list[str]:
+    t = _check(table)
+    return [
+        *force_rls_sql(t),
         f"CREATE POLICY {POLICY_NAME} ON {t} "
-        f"USING (tenant_id = {current}) WITH CHECK (tenant_id = {current})",
+        f"USING (tenant_id = {CURRENT_TENANT}) WITH CHECK (tenant_id = {CURRENT_TENANT})",
     ]
 
 

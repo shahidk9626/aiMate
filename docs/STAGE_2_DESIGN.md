@@ -1,6 +1,6 @@
 # Stage 2 Design — Authentication and Multi-Tenancy
 
-**Status: PROPOSED — awaiting product-owner approval.** No Stage 2 code exists yet.
+**Status: APPROVED (2026-11-12) — decisions A–G accepted as recommended (ADR-023).** Step 2.1 is implemented; see `DEVELOPMENT_PROGRESS.md` for the current step.
 Builds on: ADR-004 (auth), ADR-005 (tenant context), ADR-006 (RLS), ADR-007 (composite keys), ADR-020 (database roles).
 Once approved, the decisions here become ADRs and this file stays as the stage's design reference.
 
@@ -91,6 +91,9 @@ If you prefer to keep ADR-004 as approved, the rest of this design is unchanged:
 | `audit_logs` | read: `tenant_id = current tenant`; insert: `tenant_id IS NULL OR tenant_id = current tenant`; no update/delete grants |
 
 ### 5.3 Lookups before the tenant is known (decision G)
+
+> Implemented in step 2.1 with a dedicated NOLOGIN lookup role owning the functions. A function owned by the owner role would see nothing under FORCE RLS on a non-superuser production database. RLS was also extended to `users`, `auth_sessions` and `email_tokens`. See ADR-023 and `DATABASE_SCHEMA.md`.
+
 Some flows must find a row before any tenant context exists: accepting an invitation by its token, and later resolving a widget key or a Meta page id to its channel. These go through small `SECURITY DEFINER` functions owned by the owner role. Each one:
 - takes the token hash and returns **only ids** (e.g. `tenant_id`, `invitation_id`);
 - after that, the service sets the tenant context and reads the full row normally, under RLS.

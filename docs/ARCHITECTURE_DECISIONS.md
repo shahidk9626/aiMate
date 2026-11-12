@@ -161,6 +161,23 @@ Starlette 1.10 (pulled in by FastAPI 0.162) deprecates `httpx` for `TestClient` 
 - **Health probes are not access-logged when they succeed** (failures still are), and the API logs its trusted `web_origin` at startup.
 - Production deployment (TLS via Cloudflare, secrets on the VPS, backups, image registry) is designed in Stage 9; these images are its starting point.
 
+### ADR-023 Stage 2 decisions A–G — Accepted (2026-11-12)
+Approved by the product owner as recommended in `docs/STAGE_2_DESIGN.md` §2.
+- **A. Opaque server-side sessions replace the JWT + refresh design of ADR-004.** A 256-bit random cookie token, only its SHA-256 hash stored in `auth_sessions`; 7-day idle and 30-day absolute expiry; logout, password reset and member removal take effect on the next request. `pyjwt` is not used. The rest of ADR-004 (Argon2id, HttpOnly/SameSite cookies, CSRF header + Origin check) stands.
+- **B. Email provider: Postmark**, used only through SMTP (switchable by configuration). Mailpit captures mail locally.
+- **C.** Email verification is sent at signup, not required to log in, and required before inviting teammates (later also before connecting channels).
+- **D.** Signup reports an already-registered email (409) under strict rate limits; login and password reset never reveal whether an account exists.
+- **E.** Passwords are 10–128 characters with no composition rules and must not equal the email.
+- **F.** Dashboard pages are guarded in the browser via `GET /me`; the API is the real protection.
+- **G. Pre-tenant lookups use `SECURITY DEFINER` functions; implementation detail decided in step 2.1.** Production owners are not superusers and are subject to FORCE RLS, so a function owned by the owner would see nothing. Therefore:
+  - The functions are owned by a dedicated NOLOGIN role `<app role>_lookup`.
+  - That role has column-level SELECT on exactly the columns the functions use, and role-specific `USING (true)` policies.
+  - It has no BYPASSRLS, which also means no superuser is needed to create it.
+  - The functions return ids only. PUBLIC cannot call them; only the app role can.
+  - The migration grants the role CREATE on `public` for the ownership transfer only, then revokes it.
+- **RLS now also covers global identity tables (refines ADR-006):** `users`, `auth_sessions` and `email_tokens` are keyed on a second transaction setting, `app.user_id`. A user sees their own rows, plus teammates' user rows in the current tenant. Only `outbox_events` (and `alembic_version`) are without RLS, and a test enforces that list.
+- **Known limit:** RLS scopes rows to `app.tenant_id` but does not itself check that the current user is a member of that tenant. The `tenant_context` dependency (step 2.4) is the only code that sets the tenant for user requests, and signup and invitation acceptance set it after validating their own token. Enforcing membership inside every policy was considered and rejected for now: background workers act for a tenant without a user, and it would complicate every policy.
+
 ### Deferred
 - Vector store for knowledge retrieval (pgvector in the same Postgres is the default candidate) — Stage 6.
 - Billing provider (Stripe for US/UK, Razorpay for India are the candidates) — Stage 9.

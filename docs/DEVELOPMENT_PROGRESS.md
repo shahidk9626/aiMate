@@ -2,9 +2,9 @@
 
 ## Current state
 
-**Milestone:** Stage 2 — Authentication and multi-tenancy — **design review awaiting approval**
+**Milestone:** Stage 2 — Authentication and multi-tenancy — step 2.1 of 7 complete
 **Branch:** `stage-2/auth-tenancy` (based on `stage-1/foundation`; neither merged into `main` yet).
-**Design:** `docs/STAGE_2_DESIGN.md` — decisions A–G need the product owner's answer before step 2.1.
+**Design:** `docs/STAGE_2_DESIGN.md`, approved 2026-11-12 (ADR-023).
 **Stage 1:** COMPLETE (2026-11-12).
 
 ## Completed
@@ -170,9 +170,59 @@ What exists:
 
 Not built in Stage 1, by design: authentication, tenants, any product feature, the Celery worker, CI.
 
+### Stage 2, step 2.1 — Identity and tenancy data model with RLS (2026-11-12)
+
+Files created:
+- `app/modules/{identity,tenancy,audit,outbox}/models.py`
+- `alembic/versions/0002_identity_and_tenancy.py`
+- `tests/integration/test_identity_tenancy_rls.py` (27 tests)
+
+Files changed:
+- `app/db/base.py`: `TenantMixin`, `tenant_table_args`, `str_enum`.
+- `app/db/tenant.py`: `set_current_user` alongside `set_tenant`.
+- `app/db/rls.py`: `CURRENT_TENANT` / `CURRENT_USER`, `force_rls_sql`.
+- `app/db/models.py`: registry.
+- `app/core/config.py`: `db_lookup_role`; role names limited to 56 characters.
+- `tests/integration/conftest.py`: drops the lookup role.
+- `tests/integration/test_migrations.py`: head no longer hard-coded.
+
+Design refinement found while implementing:
+- Under FORCE RLS a non-superuser owner cannot see rows, so the lookup functions are owned by a dedicated NOLOGIN lookup role with column-level grants.
+- RLS was extended to `users`, `auth_sessions` and `email_tokens`.
+
+Both are recorded in ADR-023.
+
+Bug caught by the tests and fixed: the downgrade failed because the `tenants` and `users` policies depend on `memberships`; they are now dropped first.
+
+Results:
+| Check | Result |
+|---|---|
+| `pytest` | **121 passed**: 47 integration (27 new) + 74 unit |
+| ruff, strict mypy | Clean (49 files) |
+| Dev DB `0002 → 0001 → 0002` | OK; `alembic check`: no drift |
+| DB inspection | RLS forced on every table except `outbox_events`; check constraints named; functions owned by `leadflow_app_lookup`, executable only by the app role |
+
+What the new tests prove:
+- With no identity set, nothing is visible.
+- A user sees only their own user row and their own businesses; Carol sees both of hers.
+- In a business, you see teammates but not another business's users. A disabled membership hides the business.
+- Nobody can create or modify another user's row, add a membership to another business, change or delete another business's members, delete businesses or users, or create sessions for others.
+- Sessions and tokens are private to their user.
+- The audit log is scoped per business and append-only.
+- Invitations are isolated, with one open invitation per email per business.
+- The lookup functions return ids only and ignore revoked, expired, used or wrong-purpose tokens.
+- The lookup role can't log in, read password hashes or other tables, or create objects; the app role can't become it; PUBLIC can't call the functions.
+- The database itself rejects invalid roles.
+
 ## Exact next task
 
-**Get approval for `docs/STAGE_2_DESIGN.md` (decisions A–G), then Stage 2 step 2.1:** migration `0002` (tables, tenant mixin, RLS policies, `SECURITY DEFINER` lookup functions) and database-level isolation tests.
+**Stage 2, step 2.2 — security plumbing** (no endpoints yet):
+1. Add `argon2-cffi`: password hashing with rehash-on-login and a dummy verify for unknown emails.
+2. Session token helpers: generate, hash, cookie name and attributes per environment.
+3. Redis rate limiter (fixed window, in-house).
+4. CSRF middleware: `X-Requested-With` + `Origin` on unsafe methods.
+5. Security headers middleware; 1 MB request body limit; catch-all error middleware inside CORS (the 500-with-CORS fix).
+6. Unit and integration tests; docs; stop and report.
 
 Original Stage 2 brief (now covered by the design document):
 1. Data model for migration `0002`: `users`, `tenants`, `memberships`, `auth_sessions`, `password_reset_tokens`, `invitations`, `audit_logs`. RLS on tenant tables. Tenant mixin (`tenant_id`, `UNIQUE(tenant_id, id)`).
@@ -192,7 +242,7 @@ Suggested before Stage 2:
 |---|---|---|
 | 0 | Architecture review | Done, approved |
 | 1 | Foundation | **Done** (2026-11-12) |
-| 2 | Auth + multi-tenancy | Design review written, awaiting approval |
+| 2 | Auth + multi-tenancy | In progress — step 2.1 of 7 done |
 | 3 | CRM | Not started |
 | 4 | Unified inbox | Not started |
 | 5 | Website widget | Not started |

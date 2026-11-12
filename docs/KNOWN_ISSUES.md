@@ -2,7 +2,7 @@
 
 ## Pending product-owner decisions
 
-Stage 2 decisions **A–G** in `docs/STAGE_2_DESIGN.md` §2: session mechanism (A), email provider (B), email verification (C), signup "email taken" response (D), password rules (E), page protection (F), pre-tenant lookups (G). They block Stage 2 step 2.1.
+None open. Stage 2 decisions A–G were approved on 2026-11-12 (ADR-023).
 
 Decisions D1–D10 from the Day 1 review were approved on 2026-11-12 (see "Resolved decisions").
 
@@ -23,7 +23,7 @@ Decisions D1–D10 from the Day 1 review were approved on 2026-11-12 (see "Resol
 
 ## Open technical questions (resolved at the named stage)
 
-- Stage 2: transactional email provider (Postmark, Resend or Amazon SES).
+- Stage 2: Postmark account, sending domain and DNS records (SPF/DKIM) are needed before emails can be sent outside local development.
 - Stage 6: retrieval store (pgvector candidate), chunking, model choice and cost ceilings per plan.
 - Stage 7: current Meta permission names, messaging-window rules, comment-to-DM limits — **not yet verified**; must be checked against current Meta documentation before design.
 - Stage 9: billing provider(s) for INR vs USD/GBP.
@@ -40,7 +40,8 @@ Decisions D1–D10 from the Day 1 review were approved on 2026-11-12 (see "Resol
 - Local docker only: the official PostgreSQL image makes `POSTGRES_USER` (`leadflow_owner`) a superuser. Superusers bypass RLS, which is why the app never connects as it. In production the owner must be a plain database owner, not a superuser — to be enforced in the deployment checklist (Stage 9).
 - The role bootstrap sends the app password as an escaped SQL literal (DDL cannot take parameters). Do not run it while `log_statement = 'all'` is enabled on the server.
 - `alembic upgrade head` runs migrations but does not run the bootstrap; on a brand-new environment run bootstrap first (the migration tolerates either order by creating the role `NOLOGIN` if missing).
-- No tenant-owned tables exist yet, so RLS is proven on a test probe table only. Stage 2 must add `enable_tenant_rls_sql` to every tenant table migration and extend the isolation tests to real tables.
+- RLS scopes rows to the tenant id set for the transaction but does not itself verify the user's membership of that tenant (ADR-023, "Known limit"). Only the `tenant_context` dependency (step 2.4) and the token-validated signup and invitation flows may set it; code review must keep it that way.
+- Downgrading migration `0002` keeps the `<app role>_lookup` role (like the app role), because roles are cluster-wide and may be used by another database.
 
 - Unhandled 500 errors are produced by Starlette's outermost error middleware, which sits outside CORS, so a browser sees them as `NETWORK_ERROR` rather than `INTERNAL_ERROR` (the response itself and the log are correct). Fix with a catch-all middleware inside CORS when the first real endpoints land (Stage 2).
 - `WEB_ORIGIN` holds one origin. The website widget (Stage 5) is embedded on customer sites with their own origins and will use its own per-channel allowlist (`channels.allowed_origins`), not this setting.
