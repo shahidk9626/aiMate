@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AI LeadFlow — Low Level Design</title>
+<style>
+:root{--bg:#0b1020;--panel:#121a2d;--panel2:#18233b;--line:#2a3958;--text:#edf3ff;--muted:#9aabc8;--teal:#56d6c2;--blue:#6ea8fe;--orange:#ffbd75}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 Inter,system-ui,Arial}header,main{max-width:1200px;margin:auto;padding-left:24px;padding-right:24px}header{padding-top:42px;padding-bottom:20px}main{padding-bottom:60px}h1{font-size:clamp(30px,5vw,46px);line-height:1.1;margin:8px 0}h2{font-size:22px;margin:0 0 14px}h3{font-size:16px;margin:0 0 8px}.eyebrow{color:var(--teal);font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:12px}.muted{color:var(--muted)}.section{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;margin:16px 0}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.box{background:#0e1729;border:1px solid var(--line);border-radius:11px;padding:14px}.box p{margin:5px 0;color:var(--muted)}pre{overflow:auto;background:#080e1b;border:1px solid var(--line);padding:14px;border-radius:10px;color:#cfe0ff;font:12px/1.55 ui-monospace,SFMono-Regular,monospace}code{color:#a9d5ff}.table{width:100%;border-collapse:collapse}.table td,.table th{padding:10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.table th{color:var(--teal);font-size:12px;text-transform:uppercase}.callout{padding:12px 14px;border-left:3px solid var(--orange);background:#251e17;border-radius:0 8px 8px 0;color:#f6dfc2}.steps{counter-reset:s}.step{padding:10px 12px 10px 44px;position:relative;border:1px solid var(--line);border-radius:10px;margin:8px 0;background:#101a2d}.step:before{counter-increment:s;content:counter(s);position:absolute;left:12px;top:10px;width:22px;height:22px;border-radius:50%;background:#21415c;color:#bcebe4;text-align:center;font-weight:700}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:4px 9px;margin:3px;color:var(--muted);font-size:12px}.footer{text-align:center;color:var(--muted);font-size:12px;padding:20px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}.section{padding:15px}.table{font-size:12px}}
+</style></head><body>
+<header><div class="eyebrow">AI LeadFlow · Engineering specification v1.0</div><h1>Low Level System Design</h1><p class="muted">Implementation-oriented design for the MVP: API boundaries, domain modules, tenant-aware relational model, event processing, security controls and project layout.</p><span class="pill">Next.js</span><span class="pill">FastAPI</span><span class="pill">SQLAlchemy 2</span><span class="pill">Alembic</span><span class="pill">PostgreSQL</span></header>
+<main>
+<section class="section"><h2>1. Backend module boundaries</h2><div class="grid">
+<div class="box"><h3>Identity & access</h3><p>Registration, login, refresh, logout, password hashing, memberships, RBAC and tenant context.</p></div>
+<div class="box"><h3>Tenants & settings</h3><p>Business profile, timezone, locale, working hours, team membership and configuration.</p></div>
+<div class="box"><h3>Channels</h3><p>Channel connection lifecycle, provider account mapping, encrypted credentials and health state.</p></div>
+<div class="box"><h3>Webhook ingress</h3><p>Signature verification, payload validation, provider normalization, idempotency and fast acknowledgement.</p></div>
+<div class="box"><h3>CRM</h3><p>Contacts, leads, stages, assignment, notes, tasks and source attribution.</p></div>
+<div class="box"><h3>Inbox</h3><p>Conversations, messages, read state, assignment, internal notes and human takeover.</p></div>
+<div class="box"><h3>AI orchestration</h3><p>Context assembly, retrieval, policy checks, structured tool calls, response validation and escalation.</p></div>
+<div class="box"><h3>Outbound delivery</h3><p>Provider adapters, rate-limit handling, retries, delivery receipts and message status.</p></div>
+</div></section>
+<section class="section"><h2>2. Suggested repository structure</h2><pre>ai-leadflow/
+├── apps/
+│   ├── web/                         # Next.js app
+│   │   └── src/
+│   │       ├── app/
+│   │       ├── components/
+│   │       ├── features/
+│   │       ├── lib/
+│   │       └── types/
+│   └── api/                         # FastAPI service
+│       ├── app/
+│       │   ├── main.py
+│       │   ├── core/                # config, security, logging
+│       │   ├── api/v1/              # routers
+│       │   ├── modules/
+│       │   │   ├── auth/
+│       │   │   ├── tenants/
+│       │   │   ├── users/
+│       │   │   ├── channels/
+│       │   │   ├── webhooks/
+│       │   │   ├── contacts/
+│       │   │   ├── leads/
+│       │   │   ├── conversations/
+│       │   │   ├── messages/
+│       │   │   └── ai/
+│       │   ├── integrations/
+│       │   │   ├── meta/
+│       │   │   └── llm/
+│       │   ├── db/                  # session, base, models
+│       │   └── workers/             # async tasks
+│       ├── alembic/
+│       ├── tests/
+│       └── pyproject.toml
+├── packages/
+│   └── contracts/                   # shared API contracts / OpenAPI types
+├── infra/
+│   ├── docker-compose.yml
+│   └── Dockerfiles/
+├── docs/
+│   ├── HLD.html
+│   └── LLD.html
+├── .env.example
+└── README.md</pre></section>
+<section class="section"><h2>3. Relational data model</h2><p class="muted">All tenant-owned tables carry tenant_id. Composite foreign keys or equivalent database constraints should prevent cross-tenant references; API authorization is still mandatory.</p><pre>users
+- id UUID PK
+- email CITEXT UNIQUE
+- password_hash TEXT
+- full_name VARCHAR
+- is_active BOOLEAN
+- created_at TIMESTAMPTZ
+
+tenants
+- id UUID PK
+- name VARCHAR
+- slug CITEXT UNIQUE
+- timezone VARCHAR
+- status ENUM
+- created_at TIMESTAMPTZ
+
+memberships
+- id UUID PK
+- tenant_id UUID FK -> tenants.id
+- user_id UUID FK -> users.id
+- role ENUM(owner, admin, agent)
+- UNIQUE(tenant_id, user_id)
+
+channels
+- id UUID PK
+- tenant_id UUID FK
+- provider ENUM(instagram, facebook, website)
+- display_name VARCHAR
+- external_account_id VARCHAR
+- credentials_ciphertext BYTEA
+- status ENUM(pending, active, error, disconnected)
+- settings JSONB
+- UNIQUE(tenant_id, provider, external_account_id)
+
+contacts
+- id UUID PK
+- tenant_id UUID FK
+- full_name VARCHAR NULL
+- email CITEXT NULL
+- phone VARCHAR NULL
+- external_identity VARCHAR NULL
+- metadata JSONB
+- created_at, updated_at TIMESTAMPTZ
+
+leads
+- id UUID PK
+- tenant_id UUID FK
+- contact_id UUID FK
+- assigned_user_id UUID NULL
+- title VARCHAR
+- status ENUM(new, contacted, qualified, won, lost)
+- source ENUM(instagram, facebook, website, manual)
+- estimated_value NUMERIC(12,2) NULL
+- qualification JSONB
+- created_at, updated_at TIMESTAMPTZ
+
+conversations
+- id UUID PK
+- tenant_id UUID FK
+- channel_id UUID FK
+- contact_id UUID FK
+- lead_id UUID NULL
+- external_thread_id VARCHAR NULL
+- status ENUM(open, pending, closed)
+- assigned_user_id UUID NULL
+- last_message_at TIMESTAMPTZ
+- UNIQUE(tenant_id, channel_id, external_thread_id)
+
+messages
+- id UUID PK
+- tenant_id UUID FK
+- conversation_id UUID FK
+- provider_message_id VARCHAR NULL
+- direction ENUM(inbound, outbound)
+- sender_type ENUM(customer, ai, agent, system)
+- body TEXT
+- payload JSONB
+- delivery_status ENUM(received, queued, sent, delivered, failed)
+- created_at TIMESTAMPTZ
+- UNIQUE(tenant_id, provider_message_id)
+
+webhook_events
+- id UUID PK
+- provider VARCHAR
+- provider_event_id VARCHAR
+- tenant_id UUID NULL until resolved
+- payload JSONB
+- status ENUM(received, processing, processed, failed)
+- received_at, processed_at TIMESTAMPTZ
+- UNIQUE(provider, provider_event_id)
+
+audit_logs
+- id UUID PK
+- tenant_id UUID
+- actor_user_id UUID NULL
+- action VARCHAR
+- resource_type VARCHAR
+- resource_id UUID
+- metadata JSONB
+- created_at TIMESTAMPTZ</pre>
+<div class="callout">Design note: use a separate contacts table and leads table. A person can enquire more than once and create multiple opportunities. Do not assume phone/email is always available: social identities may be the only identifier.</div></section>
+<section class="section"><h2>4. API contract — MVP endpoints</h2><table class="table"><tr><th>Method + path</th><th>Purpose</th><th>Access</th></tr>
+<tr><td><code>POST /api/v1/auth/register</code></td><td>Create user + initial tenant + owner membership</td><td>Public</td></tr>
+<tr><td><code>POST /api/v1/auth/login</code></td><td>Authenticate user</td><td>Public</td></tr>
+<tr><td><code>POST /api/v1/auth/refresh</code></td><td>Rotate refresh token</td><td>Authenticated</td></tr>
+<tr><td><code>GET /api/v1/me</code></td><td>Current user and memberships</td><td>Authenticated</td></tr>
+<tr><td><code>GET /api/v1/leads</code></td><td>List/filter/paginate tenant leads</td><td>Tenant member</td></tr>
+<tr><td><code>POST /api/v1/leads</code></td><td>Create lead and contact link</td><td>Agent+</td></tr>
+<tr><td><code>PATCH /api/v1/leads/{id}</code></td><td>Update status, assignment and fields</td><td>Agent+</td></tr>
+<tr><td><code>GET /api/v1/conversations</code></td><td>Unified inbox list</td><td>Tenant member</td></tr>
+<tr><td><code>GET /api/v1/conversations/{id}/messages</code></td><td>Conversation history</td><td>Tenant member</td></tr>
+<tr><td><code>POST /api/v1/conversations/{id}/reply</code></td><td>Queue an agent reply</td><td>Agent+</td></tr>
+<tr><td><code>POST /api/v1/channels/website</code></td><td>Create website widget channel</td><td>Admin+</td></tr>
+<tr><td><code>GET /api/v1/webhooks/meta</code></td><td>Meta webhook challenge</td><td>Provider verification</td></tr>
+<tr><td><code>POST /api/v1/webhooks/meta</code></td><td>Receive Meta events</td><td>Signature verified</td></tr></table><p class="muted">Use a consistent response envelope, request IDs, cursor pagination for inboxes and structured error codes. Tenant identity must come from validated auth context, never from a client-supplied tenant_id alone.</p></section>
+<section class="section"><h2>5. Website enquiry sequence</h2><div class="steps">
+<div class="step"><b>Widget loads</b><br>Website embeds a tenant-scoped public widget key; API returns public widget configuration only.</div>
+<div class="step"><b>Visitor sends a message</b><br>API validates origin, rate limit, payload size and widget key; creates or resumes a conversation.</div>
+<div class="step"><b>Persist inbound message</b><br>Store message and an idempotency key in a transaction; create/update contact and lead.</div>
+<div class="step"><b>Queue AI task</b><br>Commit event to an outbox table; worker picks it up after commit.</div>
+<div class="step"><b>Build safe context</b><br>Load tenant knowledge, conversation history and agent policy; exclude unrelated tenant data.</div>
+<div class="step"><b>Generate and validate answer</b><br>AI returns structured response; enforce policy, confidence threshold and handoff rules.</div>
+<div class="step"><b>Deliver response</b><br>Persist outbound message as queued; worker sends via channel adapter and records result.</div>
+<div class="step"><b>Update CRM + notify</b><br>Update lead qualification/status and notify assigned team when needed.</div>
+</div></section>
+<section class="section"><h2>6. Meta webhook sequence</h2><div class="steps">
+<div class="step"><b>Provider sends webhook</b><br>Verify signature against raw request body using app secret; do not parse and reserialize before signature check.</div>
+<div class="step"><b>Resolve channel and tenant</b><br>Map provider page/account ID to an active channel record.</div>
+<div class="step"><b>Deduplicate event</b><br>Insert provider event/message ID under a unique constraint; duplicate deliveries return success without repeating side effects.</div>
+<div class="step"><b>Acknowledge quickly</b><br>Return 200 after durable acceptance; perform AI and CRM work asynchronously.</div>
+<div class="step"><b>Process asynchronously</b><br>Normalize event, upsert contact, append message, update conversation and create/update lead.</div>
+<div class="step"><b>Reply only when allowed</b><br>Check provider-specific messaging windows, permissions, policy and account status before outbound delivery.</div>
+</div></section>
+<section class="section"><h2>7. AI orchestration design</h2><pre>InboundMessage
+  -> TenantResolver
+  -> ConversationContextLoader
+  -> KnowledgeRetriever
+  -> PolicyGuard
+  -> LLMProvider.generate(structured_input)
+  -> OutputValidator
+  -> ActionRouter
+       |-- reply_to_customer
+       |-- collect_lead_field
+       |-- create_follow_up_task
+       |-- request_human_handoff
+  -> OutboundMessageQueue</pre>
+<table class="table"><tr><th>Guardrail</th><th>Implementation rule</th></tr>
+<tr><td>Grounding</td><td>Answer business-specific questions from approved knowledge; say when information is unavailable.</td></tr>
+<tr><td>Actions</td><td>LLM proposes typed actions; backend validates permissions and inputs before execution.</td></tr>
+<tr><td>Handoff</td><td>Escalate on low confidence, complaint, sensitive request, explicit human request or unsupported intent.</td></tr>
+<tr><td>Prompt injection</td><td>Treat customer messages and uploaded knowledge as untrusted data, not system instructions.</td></tr>
+<tr><td>Cost control</td><td>Per-tenant token/message limits, model routing, usage ledger and rate limits.</td></tr></table></section>
+<section class="section"><h2>8. Tenant security and authorization</h2><div class="grid">
+<div class="box"><h3>Authentication</h3><p>Short-lived access tokens; refresh token rotation; secure, HttpOnly, SameSite cookies for browser sessions.</p></div>
+<div class="box"><h3>Authorization</h3><p>Resolve tenant membership on every request. Role checks in service layer, not just frontend route guards.</p></div>
+<div class="box"><h3>Database safety</h3><p>Tenant-scoped repositories and composite constraints. Consider PostgreSQL row-level security as defense in depth.</p></div>
+<div class="box"><h3>Secrets</h3><p>Envelope encryption for Meta tokens, key rotation, least privilege and no secrets in logs or client bundles.</p></div>
+<div class="box"><h3>Abuse protection</h3><p>Rate limits, widget origin allowlist, payload size limits, bot controls and webhook verification.</p></div>
+<div class="box"><h3>Auditability</h3><p>Record login, permission changes, channel connect/disconnect, exports and sensitive admin actions.</p></div>
+</div></section>
+<section class="section"><h2>9. Error handling and reliability</h2><table class="table"><tr><th>Failure</th><th>Expected handling</th></tr>
+<tr><td>Duplicate webhook</td><td>Unique idempotency key; no duplicate CRM or AI action.</td></tr>
+<tr><td>AI provider timeout</td><td>Bounded retry; fallback acknowledgement or human handoff.</td></tr>
+<tr><td>Meta rate limit</td><td>Respect Retry-After; exponential backoff with jitter.</td></tr>
+<tr><td>Outbound send failure</td><td>Persist failed state and provider error; retry only when safe.</td></tr>
+<tr><td>Worker crash</td><td>Durable queue/outbox, visibility timeout and retry policy.</td></tr>
+<tr><td>Tenant mismatch</td><td>Reject request; log security event without leaking record existence.</td></tr></table>
+<p class="muted">Use transactional outbox for database-to-queue consistency. Do not rely on an in-memory background task for durable message processing.</p></section>
+<section class="section"><h2>10. Day-by-day implementation order</h2><table class="table"><tr><th>Day</th><th>Deliverable</th></tr>
+<tr><td>1</td><td>Architecture approval, monorepo skeleton, local PostgreSQL and environment conventions.</td></tr>
+<tr><td>2</td><td>FastAPI app, settings, health endpoint, SQLAlchemy session and Alembic.</td></tr>
+<tr><td>3</td><td>Users, tenants, memberships, authentication and tenant context.</td></tr>
+<tr><td>4</td><td>Contacts, leads, pipeline CRUD and tests.</td></tr>
+<tr><td>5</td><td>Conversations, messages, unified inbox APIs.</td></tr>
+<tr><td>6</td><td>Website widget endpoint and durable enquiry ingestion.</td></tr>
+<tr><td>7+</td><td>AI assistant, knowledge, human handoff, Meta integration and pilot hardening.</td></tr></table></section>
+<div class="footer">AI LeadFlow · LLD v1.0 · Proposed implementation contract; validate provider API capabilities before channel launch</div>
+</main></body></html>

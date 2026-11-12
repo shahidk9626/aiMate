@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI LeadFlow — High Level Design</title>
+<style>
+:root{--bg:#0b1020;--panel:#121a2d;--panel2:#18233b;--line:#2a3958;--text:#edf3ff;--muted:#9aabc8;--blue:#6ea8fe;--teal:#56d6c2;--purple:#b49aff;--orange:#ffbd75}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0%,#172544 0,transparent 35%),var(--bg);color:var(--text);font:15px/1.55 Inter,ui-sans-serif,system-ui,Arial}
+header{max-width:1200px;margin:auto;padding:44px 24px 22px}h1{font-size:clamp(30px,5vw,48px);line-height:1.08;margin:10px 0}h2{font-size:23px;margin:0 0 14px}h3{font-size:16px;margin:0 0 8px}.eyebrow{color:var(--teal);font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:12px}.sub{color:var(--muted);max-width:800px}.tag{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:5px 10px;color:var(--muted);font-size:12px;margin:4px 5px 0 0}
+main{max-width:1200px;margin:auto;padding:10px 24px 60px}.section{background:linear-gradient(145deg,var(--panel),#10182a);border:1px solid var(--line);border-radius:18px;padding:22px;margin:18px 0;box-shadow:0 14px 40px #0002}
+.diagram{display:grid;gap:12px}.row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.node{background:var(--panel2);border:1px solid var(--line);border-radius:13px;padding:14px;text-align:center;min-width:0}.node b{display:block;margin-bottom:4px}.node small{color:var(--muted)}.node.blue{border-color:#416aa8}.node.teal{border-color:#287d77}.node.purple{border-color:#6e5a9f}.node.orange{border-color:#93683b}.arrow{text-align:center;color:var(--teal);font-size:23px;line-height:1}.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.card{background:#0e1729;border:1px solid var(--line);padding:15px;border-radius:12px}.card p,.node p{color:var(--muted);margin:5px 0 0;font-size:13px}.flow{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}.pill{padding:9px 13px;border:1px solid var(--line);background:#16223a;border-radius:10px}.arr{color:var(--teal);font-weight:800}.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:11px;border-bottom:1px solid var(--line);vertical-align:top}.table th{color:var(--teal);font-size:12px;text-transform:uppercase}.table td{color:#d6e0f3}.note{border-left:3px solid var(--orange);padding:10px 14px;background:#241d17;border-radius:0 9px 9px 0;color:#f5d8b6}.footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
+@media(max-width:760px){.row,.cards,.two{grid-template-columns:1fr}.section{padding:16px}header{padding-top:30px}.table{font-size:13px}}
+</style></head>
+<body>
+<header><div class="eyebrow">AI LeadFlow · Architecture v1.0</div><h1>High Level System Design</h1><p class="sub">A multi-tenant AI enquiry automation and CRM platform. Instagram, Facebook Messenger and website enquiries flow into one business workspace, where AI can respond, qualify leads and hand conversations to people.</p><span class="tag">Next.js</span><span class="tag">FastAPI</span><span class="tag">PostgreSQL</span><span class="tag">Redis / Worker</span><span class="tag">Meta APIs</span></header>
+<main>
+<section class="section"><h2>1. System context</h2><div class="diagram">
+<div class="row"><div class="node blue"><b>Instagram</b><small>DMs · permitted comment triggers</small></div><div class="node blue"><b>Facebook Messenger</b><small>Page conversations</small></div><div class="node blue"><b>Business website</b><small>Chat widget · enquiry forms</small></div></div>
+<div class="arrow">↓ Secure webhooks / widget events ↓</div>
+<div class="node teal"><b>FastAPI Application Layer</b><small>Webhook endpoints · REST API · authentication · tenant authorization · validation</small></div>
+<div class="arrow">↓</div>
+<div class="row"><div class="node purple"><b>Channel Adapters</b><small>Normalize incoming events; send replies through provider APIs</small></div><div class="node purple"><b>AI Orchestrator</b><small>Business context · intent · response policy · tool selection</small></div><div class="node purple"><b>CRM Services</b><small>Contacts · leads · assignments · pipeline</small></div></div>
+<div class="arrow">↕</div>
+<div class="row"><div class="node"><b>PostgreSQL</b><small>Tenant-scoped business data and audit trail</small></div><div class="node"><b>Redis + Worker</b><small>Queues · retries · async AI and outbound work</small></div><div class="node"><b>Object Storage</b><small>Knowledge files and uploaded assets (later)</small></div></div>
+<div class="arrow">↕</div>
+<div class="node orange"><b>Next.js SaaS Dashboard</b><small>Business owner · Sales agents · Platform admin</small></div>
+</div></section>
+<section class="section"><h2>2. Main product surfaces</h2><div class="cards">
+<div class="card"><h3>Business workspace</h3><p>Onboarding, team members, connected channels, business profile, FAQs and operating hours.</p></div>
+<div class="card"><h3>Unified inbox</h3><p>All supported conversations, assignment, internal notes, status, human takeover and response history.</p></div>
+<div class="card"><h3>CRM pipeline</h3><p>Contacts, leads, source attribution, qualification fields, stages, owner and follow-up tasks.</p></div>
+<div class="card"><h3>AI configuration</h3><p>Knowledge sources, tone, allowed actions, escalation rules, confidence and handoff conditions.</p></div>
+<div class="card"><h3>Automation</h3><p>Event-triggered workflows, notifications, reminders and permitted follow-up sequences.</p></div>
+<div class="card"><h3>Analytics & billing</h3><p>Channel volumes, response time, qualified leads, conversion metrics, plans and usage limits.</p></div>
+</div></section>
+<section class="section"><h2>3. Core enquiry lifecycle</h2><div class="flow"><span class="pill">Customer message</span><span class="arr">→</span><span class="pill">Verify + deduplicate</span><span class="arr">→</span><span class="pill">Normalize event</span><span class="arr">→</span><span class="pill">Find tenant/contact</span><span class="arr">→</span><span class="pill">AI policy + context</span><span class="arr">→</span><span class="pill">Reply / escalate</span><span class="arr">→</span><span class="pill">Update CRM</span></div><p class="sub">The inbound event is persisted before asynchronous processing. Outbound messages are queued, retried safely and recorded. A human agent can take over at any point.</p></section>
+<section class="section"><h2>4. Deployment view</h2><div class="two">
+<div class="card"><h3>Application services</h3><p>Next.js web app and FastAPI API deployed independently. Worker process runs separately from HTTP request handling.</p></div>
+<div class="card"><h3>Managed infrastructure</h3><p>PostgreSQL database, Redis queue/cache, encrypted secrets, object storage, TLS, backups, logs and monitoring.</p></div>
+</div><div class="note" style="margin-top:14px">MVP principle: start with a modular monolith plus a separate background worker. Avoid microservices until real load and team needs justify them.</div></section>
+<section class="section"><h2>5. Technology choices</h2><table class="table"><tr><th>Layer</th><th>Choice</th><th>Why</th></tr>
+<tr><td>Web</td><td>Next.js + TypeScript</td><td>Dashboard, onboarding and embedded website widget management.</td></tr>
+<tr><td>API</td><td>Python + FastAPI</td><td>Typed APIs, async I/O and straightforward AI ecosystem integration.</td></tr>
+<tr><td>Database</td><td>PostgreSQL</td><td>Relational CRM data, transactions, JSONB metadata and constraints.</td></tr>
+<tr><td>ORM / migrations</td><td>SQLAlchemy 2 + Alembic</td><td>Native Python persistence and schema migrations.</td></tr>
+<tr><td>Async jobs</td><td>Redis + Celery (or ARQ)</td><td>Webhook processing, AI generation, retries and outbound delivery.</td></tr>
+<tr><td>AI</td><td>Provider adapter; model configurable</td><td>Keep vendor choice replaceable; apply tenant-level limits and policies.</td></tr>
+<tr><td>Social channels</td><td>Meta Graph / Messenger APIs</td><td>Official supported integrations, subject to permissions and platform policies.</td></tr></table></section>
+<section class="section"><h2>6. Trust boundaries and non-functional requirements</h2><div class="cards">
+<div class="card"><h3>Tenant isolation</h3><p>Every business record is tenant-scoped. Authorization is enforced server-side on every query and mutation.</p></div>
+<div class="card"><h3>Webhook safety</h3><p>Verify provider signatures where supported, validate payloads, deduplicate events and reject replays.</p></div>
+<div class="card"><h3>Credential security</h3><p>Encrypt provider tokens at rest, redact logs, rotate secrets and restrict access.</p></div>
+<div class="card"><h3>Reliability</h3><p>Idempotent jobs, retry with backoff, dead-letter handling and observable delivery states.</p></div>
+<div class="card"><h3>AI safety</h3><p>Ground answers in approved business knowledge; no unsupported promises; human handoff on uncertainty.</p></div>
+<div class="card"><h3>Privacy</h3><p>Retention controls, access audit, export/deletion workflows and minimal personal data collection.</p></div>
+</div></section>
+<section class="section"><h2>7. MVP scope and delivery sequence</h2><table class="table"><tr><th>Stage</th><th>Scope</th><th>Exit criterion</th></tr>
+<tr><td>1 · Foundation</td><td>Auth, tenants, memberships, CRM schema, local environment</td><td>Two tenants can use the app with isolated data.</td></tr>
+<tr><td>2 · Website channel</td><td>Embeddable widget, enquiry capture, unified inbox</td><td>Website enquiry becomes a contact, lead and conversation.</td></tr>
+<tr><td>3 · AI assistant</td><td>Knowledge base, response orchestration, human handoff</td><td>Grounded answer and safe escalation work end-to-end.</td></tr>
+<tr><td>4 · Meta channels</td><td>Instagram and Facebook onboarding, webhooks and replies</td><td>Approved test accounts exchange messages reliably.</td></tr>
+<tr><td>5 · Commercial</td><td>Usage metering, billing, analytics and onboarding</td><td>First pilot customer can be onboarded and supported.</td></tr></table></section>
+<div class="footer">AI LeadFlow · HLD v1.0 · Working architecture, to be refined during implementation</div>
+</main></body></html>
